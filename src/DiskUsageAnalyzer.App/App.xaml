@@ -1,0 +1,9 @@
+<Application x:Class="DiskUsageAnalyzer.App.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:converters="clr-namespace:DiskUsageAnalyzer.App.Converters"
+             StartupUri="MainWindow.xaml">
+    <Application.Resources>
+        <converters:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+    </Application.Resources>
+</Application>
