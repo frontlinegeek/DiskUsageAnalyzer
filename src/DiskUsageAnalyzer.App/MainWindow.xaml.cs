@@ -101,6 +101,40 @@ public partial class MainWindow : Window
         return null;
     }
 
+    private void ResultColumnDividerDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not GridSplitter { Parent: Grid header } splitter) return;
+
+        var columnToLeft = Grid.GetColumn(splitter) - 1;
+        if (columnToLeft < 0 || columnToLeft >= header.ColumnDefinitions.Count) return;
+
+        var realizedRows = FindVisualDescendants<Grid>(ResultTree)
+            .Where(grid => Equals(grid.Tag, "ResultRow") && columnToLeft < grid.ColumnDefinitions.Count)
+            .ToArray();
+
+        header.ColumnDefinitions[columnToLeft].Width = GridLength.Auto;
+        foreach (var row in realizedRows)
+            row.ColumnDefinitions[columnToLeft].Width = GridLength.Auto;
+
+        header.UpdateLayout();
+        var contentWidth = Math.Ceiling(header.ColumnDefinitions[columnToLeft].ActualWidth);
+
+        foreach (var row in realizedRows)
+            row.ColumnDefinitions[columnToLeft].Width = new GridLength(0);
+        header.ColumnDefinitions[columnToLeft].Width = new GridLength(contentWidth);
+        e.Handled = true;
+    }
+
+    private static IEnumerable<T> FindVisualDescendants<T>(DependencyObject parent) where T : DependencyObject
+    {
+        for (var index = 0; index < VisualTreeHelper.GetChildrenCount(parent); index++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, index);
+            if (child is T match) yield return match;
+            foreach (var descendant in FindVisualDescendants<T>(child)) yield return descendant;
+        }
+    }
+
     protected override void OnClosed(EventArgs e)
     {
         if (DataContext is MainWindowViewModel viewModel)

@@ -14,10 +14,15 @@
             <Setter Property="Padding" Value="6"/>
         </Style>
         <HierarchicalDataTemplate DataType="{x:Type vm:DiskItemViewModel}" ItemsSource="{Binding Children}">
-            <Grid Margin="{Binding RowMargin}" Width="1030" ToolTip="{Binding FullPath}">
+            <Grid Tag="ResultRow" Margin="{Binding RowMargin}" HorizontalAlignment="Left" ToolTip="{Binding FullPath}">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="260"/><ColumnDefinition Width="110"/><ColumnDefinition Width="260"/>
-                    <ColumnDefinition Width="80"/><ColumnDefinition Width="80"/><ColumnDefinition Width="150"/><ColumnDefinition Width="70"/>
+                    <ColumnDefinition Width="0" SharedSizeGroup="ResultName"/><ColumnDefinition Width="5"/>
+                    <ColumnDefinition Width="0" SharedSizeGroup="ResultSize"/><ColumnDefinition Width="5"/>
+                    <ColumnDefinition Width="0" SharedSizeGroup="ResultPercentage"/><ColumnDefinition Width="5"/>
+                    <ColumnDefinition Width="0" SharedSizeGroup="ResultFiles"/><ColumnDefinition Width="5"/>
+                    <ColumnDefinition Width="0" SharedSizeGroup="ResultFolders"/><ColumnDefinition Width="5"/>
+                    <ColumnDefinition Width="0" SharedSizeGroup="ResultModified"/><ColumnDefinition Width="5"/>
+                    <ColumnDefinition Width="0" SharedSizeGroup="ResultErrors"/>
                 </Grid.ColumnDefinitions>
                 <Grid Margin="{Binding NameMargin}">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
@@ -25,17 +30,17 @@
                     <TextBlock Grid.Column="1" Text=" reparse" Foreground="#916300"
                                Visibility="{Binding IsReparsePoint, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                 </Grid>
-                <TextBlock Grid.Column="1" Text="{Binding Size}" HorizontalAlignment="Right"/>
-                <Grid Grid.Column="2" Margin="12,0,0,0">
+                <TextBlock Grid.Column="2" Text="{Binding Size}" HorizontalAlignment="Right"/>
+                <Grid Grid.Column="4" Margin="12,0,0,0">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="190"/><ColumnDefinition Width="58"/></Grid.ColumnDefinitions>
                     <Border Background="#DFE4E8" Height="8"/>
                     <Border Background="#197E79" Height="8" Width="{Binding BarWidth}" HorizontalAlignment="Left"/>
                     <TextBlock Grid.Column="1" Text="{Binding PercentText}" HorizontalAlignment="Right" FontSize="11"/>
                 </Grid>
-                <TextBlock Grid.Column="3" Text="{Binding FileCount}" HorizontalAlignment="Right"/>
-                <TextBlock Grid.Column="4" Text="{Binding FolderCount}" HorizontalAlignment="Right"/>
-                <TextBlock Grid.Column="5" Text="{Binding LastModified}" HorizontalAlignment="Right"/>
-                <TextBlock Grid.Column="6" Text="{Binding ErrorCount}" HorizontalAlignment="Right" Foreground="#A33A2A"/>
+                <TextBlock Grid.Column="6" Text="{Binding FileCount}" HorizontalAlignment="Right"/>
+                <TextBlock Grid.Column="8" Text="{Binding FolderCount}" HorizontalAlignment="Right"/>
+                <TextBlock Grid.Column="10" Text="{Binding LastModified}" HorizontalAlignment="Right"/>
+                <TextBlock Grid.Column="12" Text="{Binding ErrorCount}" HorizontalAlignment="Right" Foreground="#A33A2A"/>
             </Grid>
         </HierarchicalDataTemplate>
         <HierarchicalDataTemplate DataType="{x:Type vm:FolderTreeItemViewModel}" ItemsSource="{Binding Children}">
@@ -99,18 +104,35 @@
                 </Grid>
             </Expander>
             <ScrollViewer x:Name="ResultScroller" Grid.Row="3" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" CanContentScroll="False">
-                <Grid MinWidth="1080">
+                <Grid MinWidth="1080" Grid.IsSharedSizeScope="True">
                     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
                     <Grid Background="#E7ECF1" Margin="0,0,0,2">
-                        <Grid Margin="28,8,12,8" Width="1030" HorizontalAlignment="Left">
+                        <Grid Margin="28,8,12,8" HorizontalAlignment="Left">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="260"/><ColumnDefinition Width="110"/><ColumnDefinition Width="260"/>
-                                <ColumnDefinition Width="80"/><ColumnDefinition Width="80"/><ColumnDefinition Width="150"/><ColumnDefinition Width="70"/>
+                                <ColumnDefinition Width="260" MinWidth="60" SharedSizeGroup="ResultName"/><ColumnDefinition Width="5"/>
+                                <ColumnDefinition Width="110" MinWidth="45" SharedSizeGroup="ResultSize"/><ColumnDefinition Width="5"/>
+                                <ColumnDefinition Width="260" MinWidth="90" SharedSizeGroup="ResultPercentage"/><ColumnDefinition Width="5"/>
+                                <ColumnDefinition Width="80" MinWidth="40" SharedSizeGroup="ResultFiles"/><ColumnDefinition Width="5"/>
+                                <ColumnDefinition Width="80" MinWidth="50" SharedSizeGroup="ResultFolders"/><ColumnDefinition Width="5"/>
+                                <ColumnDefinition Width="150" MinWidth="70" SharedSizeGroup="ResultModified"/><ColumnDefinition Width="5"/>
+                                <ColumnDefinition Width="70" MinWidth="40" SharedSizeGroup="ResultErrors"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Text="Name"/><TextBlock Grid.Column="1" Text="Size" HorizontalAlignment="Right"/>
-                            <TextBlock Grid.Column="2" Text="{Binding PercentageHeading}" Margin="12,0"/><TextBlock Grid.Column="3" Text="Files" HorizontalAlignment="Right"/>
-                            <TextBlock Grid.Column="4" Text="Folders" HorizontalAlignment="Right"/><TextBlock Grid.Column="5" Text="Modified" HorizontalAlignment="Right"/>
-                            <TextBlock Grid.Column="6" Text="Errors" HorizontalAlignment="Right"/>
+                            <TextBlock Text="Name"/><TextBlock Grid.Column="2" Text="Size" HorizontalAlignment="Right"/>
+                            <TextBlock Grid.Column="4" Text="{Binding PercentageHeading}" Margin="12,0"/><TextBlock Grid.Column="6" Text="Files" HorizontalAlignment="Right"/>
+                            <TextBlock Grid.Column="8" Text="Folders" HorizontalAlignment="Right"/><TextBlock Grid.Column="10" Text="Modified" HorizontalAlignment="Right"/>
+                            <TextBlock Grid.Column="12" Text="Errors" HorizontalAlignment="Right"/>
+                            <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch" Background="#D6DDE5"
+                                          ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" MouseDoubleClick="ResultColumnDividerDoubleClick"/>
+                            <GridSplitter Grid.Column="3" Width="5" HorizontalAlignment="Stretch" Background="#D6DDE5"
+                                          ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" MouseDoubleClick="ResultColumnDividerDoubleClick"/>
+                            <GridSplitter Grid.Column="5" Width="5" HorizontalAlignment="Stretch" Background="#D6DDE5"
+                                          ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" MouseDoubleClick="ResultColumnDividerDoubleClick"/>
+                            <GridSplitter Grid.Column="7" Width="5" HorizontalAlignment="Stretch" Background="#D6DDE5"
+                                          ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" MouseDoubleClick="ResultColumnDividerDoubleClick"/>
+                            <GridSplitter Grid.Column="9" Width="5" HorizontalAlignment="Stretch" Background="#D6DDE5"
+                                          ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" MouseDoubleClick="ResultColumnDividerDoubleClick"/>
+                            <GridSplitter Grid.Column="11" Width="5" HorizontalAlignment="Stretch" Background="#D6DDE5"
+                                          ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" MouseDoubleClick="ResultColumnDividerDoubleClick"/>
                         </Grid>
                     </Grid>
                     <TreeView x:Name="ResultTree" Grid.Row="1" ItemsSource="{Binding Results}" SelectedItemChanged="ResultSelected" VirtualizingStackPanel.IsVirtualizing="True"
