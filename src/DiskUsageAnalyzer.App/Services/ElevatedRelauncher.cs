@@ -43,12 +43,13 @@ public sealed class ElevatedRelauncher : IElevatedRelauncher
 
         if (Path.GetFileNameWithoutExtension(processPath).Equals("dotnet", StringComparison.OrdinalIgnoreCase))
         {
-            var entryAssemblyPath = Assembly.GetEntryAssembly()?.Location;
-            if (string.IsNullOrWhiteSpace(entryAssemblyPath))
+            var entryAssemblyName = Assembly.GetEntryAssembly()?.GetName().Name;
+            if (string.IsNullOrWhiteSpace(entryAssemblyName))
             {
-                throw new InvalidOperationException("Entry assembly path is not available.");
+                throw new InvalidOperationException("Entry assembly name is not available.");
             }
 
+            var entryAssemblyPath = Path.Combine(AppContext.BaseDirectory, $"{entryAssemblyName}.dll");
             startInfo.ArgumentList.Add(entryAssemblyPath);
         }
 

@@ -35,6 +35,22 @@ Run the WPF app:
 dotnet run --project src\DiskUsageAnalyzer.App\DiskUsageAnalyzer.App.csproj
 ```
 
+## Windows Installer
+
+The installer is a self-contained x64 package for Windows 10 and 11. It installs
+for the current user, creates a Start menu shortcut, and does not require the
+.NET runtime or administrator rights.
+
+Install [Inno Setup 6](https://jrsoftware.org/isinfo.php), then run:
+
+```powershell
+.\installer\Build-Installer.cmd -Version 1.0.2
+```
+
+The finished setup executable is written to `artifacts\installer`. To use an
+Inno Setup compiler outside its standard location, pass its full path with
+`-InnoCompiler` or set `INNO_SETUP_COMPILER`.
+
 ## Tests and Diagnostics
 
 The solution contains xUnit/Moq suites for Core/Infrastructure and Windows application behavior. Filesystem integration tests use isolated temporary folders. Deletion decisions use mocks. WPF rendering tests are opt-in:
