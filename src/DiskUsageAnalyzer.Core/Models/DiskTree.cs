@@ -27,11 +27,13 @@ public static class DiskTree
         item.SubtreeErrorCount = item.Errors.Count;
         if (item.ItemType == DiskItemType.File) return;
         item.LogicalSizeBytes = 0;
+        item.AllocatedSizeBytes = item.Children.All(child => child.AllocatedSizeBytes.HasValue) ? 0 : null;
         item.FileCount = 0;
         item.FolderCount = 0;
         foreach (var child in item.Children)
         {
             item.LogicalSizeBytes += child.LogicalSizeBytes;
+            if (item.AllocatedSizeBytes.HasValue) item.AllocatedSizeBytes += child.AllocatedSizeBytes;
             item.FileCount += child.FileCount + (child.ItemType == DiskItemType.File ? 1 : 0);
             item.FolderCount += child.FolderCount + (child.ItemType != DiskItemType.File ? 1 : 0);
             item.SubtreeErrorCount += child.SubtreeErrorCount;

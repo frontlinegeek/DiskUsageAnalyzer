@@ -20,6 +20,12 @@ public sealed class DiskItem
 
     public bool IsReparsePoint { get; set; }
 
+    public FileAttributes Attributes { get; set; }
+
+    public ulong? FileId { get; set; }
+
+    public ulong? ParentFileId { get; set; }
+
     public long SubtreeErrorCount { get; set; }
 
     public List<DiskItem> Children { get; } = [];

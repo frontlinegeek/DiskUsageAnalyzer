@@ -50,9 +50,12 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
         BrowseCommand = new RelayCommand(_ => Safe(() =>
         {
             var path = _folderPicker.PickFolder(SelectedPath);
-            if (!string.IsNullOrWhiteSpace(path)) SelectedPath = path;
+            if (!string.IsNullOrWhiteSpace(path)) SelectScanRoot(path);
         }), _ => !IsBusy);
         ScanCommand = new AsyncRelayCommand(_ => ScanAsync(), _ => !IsBusy && !string.IsNullOrWhiteSpace(SelectedPath), Failure);
+        LoadCacheCommand = new AsyncRelayCommand(_ => LoadCacheAsync(false), _ => !IsBusy && !string.IsNullOrWhiteSpace(SelectedPath), Failure);
+        IncrementalRefreshCommand = new AsyncRelayCommand(_ => IncrementalRefreshAsync(), _ => !IsBusy && _session.CacheMetadata is not null, Failure);
+        DeleteCacheCommand = new AsyncRelayCommand(_ => DeleteCacheAsync(), _ => !IsBusy && !string.IsNullOrWhiteSpace(SelectedPath), Failure);
         CancelCommand = new RelayCommand(_ => _operationCancellation?.Cancel(), _ => IsBusy);
         ExportCommand = new AsyncRelayCommand(_ => ExportAsync(), _ => !IsBusy && _session.Snapshot is not null, Failure);
         CopyPathCommand = new RelayCommand(p => Safe(() => _actions.CopyPath(((DiskItemViewModel)p!).FullPath)), p => p is DiskItemViewModel);
@@ -62,6 +65,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
             _actions.OpenFolder(item.Item.ItemType == DiskItemType.File ? Path.GetDirectoryName(item.FullPath)! : item.FullPath);
         }), p => p is DiskItemViewModel);
         DeleteItemCommand = new AsyncRelayCommand(p => DeleteAsync((DiskItemViewModel)p!), p => CanDelete(p as DiskItemViewModel), Failure);
+        RescanItemCommand = new AsyncRelayCommand(RescanAsync, CanRescan, Failure);
         ElevateCommand = new RelayCommand(_ => Safe(() =>
         {
             if (_elevation.Relaunch(SelectedPath) is not null) _interaction.Shutdown();
@@ -75,11 +79,15 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
     public ObservableCollection<FolderTreeItemViewModel> FolderRoots { get; } = [];
     public ICommand BrowseCommand { get; }
     public AsyncRelayCommand ScanCommand { get; }
+    public AsyncRelayCommand LoadCacheCommand { get; }
+    public AsyncRelayCommand IncrementalRefreshCommand { get; }
+    public AsyncRelayCommand DeleteCacheCommand { get; }
     public ICommand CancelCommand { get; }
     public AsyncRelayCommand ExportCommand { get; }
     public ICommand CopyPathCommand { get; }
     public ICommand OpenFolderCommand { get; }
     public AsyncRelayCommand DeleteItemCommand { get; }
+    public AsyncRelayCommand RescanItemCommand { get; }
     public ICommand ElevateCommand { get; }
     public AsyncRelayCommand RefreshFoldersCommand { get; }
     public Task FilterTask { get; private set; } = Task.CompletedTask;
@@ -130,7 +138,11 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
     public string ErrorsEncounteredText => _errorsEncountered.ToString("N0");
     public bool IsBusy => _operation.Length != 0;
     public bool IsScanning => _operation == "Scanning";
+    public bool IsLoadingCache => _operation == "Loading cache";
     public bool IsDeleting => _operation == "Deleting";
+    public bool IsCachedData => _session.IsDisplayingCachedData;
+    public string CacheStatus => _session.CacheMetadata is { } cache
+        ? $"Cached results · updated {cache.CompletedAt.ToLocalTime():g}" : "";
     public bool DeletionEnabled
     {
         get => _deletionEnabled;
@@ -154,7 +166,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
             if (_disposed) return;
             FolderRoots.Clear();
             foreach (var entry in entries)
-                FolderRoots.Add(new FolderTreeItemViewModel(entry, _folders, path => SelectedPath = path, _lifetime.Token));
+                FolderRoots.Add(new FolderTreeItemViewModel(entry, _folders, SelectScanRoot, _lifetime.Token));
             if (LargestFiles) await (RevealFolderTask = RevealFolderAsync());
         }
         catch (OperationCanceledException) { }
@@ -176,11 +188,86 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
             {
                 if (!_disposed && _acceptProgress && IsScanning && operationId == _operationId) UpdateProgress(update);
             });
-            await _session.ScanAsync(new ScanOptions { RootPath = path, IncludeHiddenItems = true }, progress, token);
+            await _session.ScanAsync(new ScanOptions { RootPath = path, IncludeHiddenItems = true, CalculateAllocatedSize = true }, progress, token);
             _acceptProgress = false;
             await PublishAsync();
+            NotifyCacheState();
             Status = Completion($"Complete in {elapsed.Elapsed:g}");
         });
+    }
+
+    public Task LoadSelectedCacheAsync() => LoadCacheAsync(true);
+
+    private async Task LoadCacheAsync(bool automatic)
+    {
+        if (string.IsNullOrWhiteSpace(SelectedPath) || IsBusy) return;
+        var previousStatus = Status;
+        var requestedPath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(SelectedPath));
+        await RunOperation("Loading cache", async token =>
+        {
+            var operationId = _operationId;
+            _acceptProgress = true;
+            UpdateProgress(new ScanProgress { CurrentPath = requestedPath });
+            var progress = new Progress<ScanProgress>(update =>
+            {
+                if (!_disposed && _acceptProgress && IsLoadingCache && operationId == _operationId)
+                    UpdateProgress(update);
+            });
+            var loaded = await _session.LoadCachedAsync(requestedPath, progress, token);
+            _acceptProgress = false;
+            if (!loaded)
+            {
+                Status = automatic ? previousStatus : "No cached scan is available for this location";
+                return;
+            }
+            if (!string.Equals(requestedPath, Path.TrimEndingDirectorySeparator(Path.GetFullPath(SelectedPath!)), StringComparison.OrdinalIgnoreCase)) return;
+            await PublishAsync();
+            NotifyCacheState();
+            Status = CacheStatus;
+        });
+    }
+
+    private void SelectScanRoot(string path)
+    {
+        SelectedPath = path;
+        _dispatcher.Post(() => { if (!_disposed && !IsBusy) _ = LoadCacheAsync(true); });
+    }
+
+    private async Task IncrementalRefreshAsync()
+    {
+        await RunOperation("Refreshing cached scan", async token =>
+        {
+            var operationId = _operationId;
+            _acceptProgress = true;
+            var progress = new Progress<ScanProgress>(update =>
+            {
+                if (!_disposed && _acceptProgress && operationId == _operationId) UpdateProgress(update);
+            });
+            var result = await _session.RefreshCachedAsync(progress, token);
+            _acceptProgress = false;
+            await PublishAsync();
+            NotifyCacheState();
+            Status = result.Kind == Core.Caching.CacheRefreshKind.FullScan
+                ? $"Full scan complete ({result.Detail})" : $"Incremental refresh complete · {result.Detail}";
+        });
+    }
+
+    private async Task DeleteCacheAsync()
+    {
+        if (string.IsNullOrWhiteSpace(SelectedPath)) return;
+        await RunOperation("Deleting cache", async token =>
+        {
+            await _session.DeleteCacheAsync(SelectedPath, token);
+            NotifyCacheState();
+            Status = "Cached scan deleted";
+        });
+    }
+
+    private void NotifyCacheState()
+    {
+        OnPropertyChanged(nameof(IsCachedData));
+        OnPropertyChanged(nameof(CacheStatus));
+        RaiseCommands();
     }
 
     private async Task RevealFolderAsync()
@@ -237,6 +324,42 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
             await _session.DeleteAsync(item.FullPath, _actions, token);
             await PublishAsync();
             Status = Completion($"Deleted {item.FullPath}");
+        });
+    }
+
+    private bool CanRescan(object? parameter) => !_disposed && !IsBusy && parameter switch
+    {
+        DiskItemViewModel item => item.Item.ItemType != DiskItemType.File && !item.IsReparsePoint
+            && _session.Snapshot?.Rows.ContainsKey(item.FullPath) == true,
+        FolderTreeItemViewModel folder => folder.IsAccessible && !string.IsNullOrWhiteSpace(folder.FullPath),
+        _ => false
+    };
+
+    private async Task RescanAsync(object? parameter)
+    {
+        if (!CanRescan(parameter)) return;
+        if (parameter is FolderTreeItemViewModel folder)
+        {
+            SelectedPath = folder.FullPath;
+            await ScanAsync();
+            return;
+        }
+
+        var item = (DiskItemViewModel)parameter!;
+        await RunOperation("Rescanning", async token =>
+        {
+            var operationId = _operationId;
+            _acceptProgress = true;
+            var elapsed = Stopwatch.StartNew();
+            var progress = new Progress<ScanProgress>(update =>
+            {
+                if (!_disposed && _acceptProgress && operationId == _operationId) UpdateProgress(update);
+            });
+            await _session.RescanAsync(item.FullPath, progress, token);
+            _acceptProgress = false;
+            await PublishAsync();
+            NotifyCacheState();
+            Status = Completion($"Rescanned {item.FullPath} in {elapsed.Elapsed:g}");
         });
     }
 
@@ -389,12 +512,14 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
 
     private void BusyChanged()
     {
-        OnPropertyChanged(nameof(IsBusy)); OnPropertyChanged(nameof(IsScanning)); OnPropertyChanged(nameof(IsDeleting));
+        OnPropertyChanged(nameof(IsBusy)); OnPropertyChanged(nameof(IsScanning));
+        OnPropertyChanged(nameof(IsLoadingCache)); OnPropertyChanged(nameof(IsDeleting));
         RaiseCommands();
     }
     private void RaiseCommands()
     {
-        foreach (var command in new[] { BrowseCommand, ScanCommand, CancelCommand, ExportCommand, DeleteItemCommand, ElevateCommand, RefreshFoldersCommand })
+        foreach (var command in new[] { BrowseCommand, ScanCommand, LoadCacheCommand, IncrementalRefreshCommand, DeleteCacheCommand,
+                     CancelCommand, ExportCommand, DeleteItemCommand, RescanItemCommand, ElevateCommand, RefreshFoldersCommand })
         {
             if (command is RelayCommand relay) relay.RaiseCanExecuteChanged();
             if (command is AsyncRelayCommand asyncRelay) asyncRelay.RaiseCanExecuteChanged();

@@ -3,6 +3,7 @@ using DiskUsageAnalyzer.App.Commands;
 using DiskUsageAnalyzer.App.Services;
 using DiskUsageAnalyzer.App.ViewModels;
 using DiskUsageAnalyzer.Core.Models;
+using DiskUsageAnalyzer.Core.Caching;
 using DiskUsageAnalyzer.Core.Scanning;
 using DiskUsageAnalyzer.Core.Updating;
 using DiskUsageAnalyzer.Tests;
@@ -187,6 +188,34 @@ public sealed class ViewModelTests
         await fixture.ViewModel.FilterTask;
         Assert.Equal(20, fixture.ViewModel.Results[0].Item.SizeBytes);
         Assert.Single(fixture.ViewModel.Results[0].Children);
+    }
+
+    [Fact]
+    public async Task CacheLoad_ExposesModalBusyStateAndPublishesLoadedResult()
+    {
+        var root = Fixture.Tree();
+        var metadata = new CachedScanMetadata(1, root.FullPath, DateTimeOffset.UtcNow,
+            new ScanOptions { RootPath = root.FullPath }, null, null);
+        var completion = new TaskCompletionSource<CachedScan?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cache = new Mock<IScanCache>();
+        cache.Setup(c => c.LoadLatestAsync(root.FullPath, It.IsAny<IProgress<ScanProgress>>(), It.IsAny<CancellationToken>()))
+            .Returns(completion.Task);
+        using var vm = new MainWindowViewModel(new ScanSessionCoordinator(Mock.Of<IDiskScanner>(),
+                Mock.Of<IDiskUsageExporter>(), Mock.Of<IFileSystemChangeMonitor>(), cache: cache.Object),
+            Mock.Of<IFolderPicker>(), Mock.Of<ICsvExportPicker>(), Mock.Of<IElevatedRelauncher>(),
+            Mock.Of<IFileActions>(), Mock.Of<IUserInteraction>(), Mock.Of<IUiDispatcher>(), Mock.Of<IFolderCatalog>())
+        { SelectedPath = root.FullPath };
+
+        var loading = vm.LoadCacheCommand.ExecuteAsync();
+        Assert.True(vm.IsLoadingCache);
+        Assert.True(vm.IsBusy);
+        Assert.True(vm.CancelCommand.CanExecute(null));
+        completion.SetResult(new CachedScan(metadata, root));
+        await loading;
+
+        Assert.False(vm.IsLoadingCache);
+        Assert.False(vm.IsBusy);
+        Assert.Equal(root.FullPath, Assert.Single(vm.Results).FullPath);
     }
 
     [Fact]

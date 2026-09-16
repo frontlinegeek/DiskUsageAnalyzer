@@ -6,9 +6,11 @@
 | --- | --- |
 | Core models and DiskTree | Disk items, local scan errors, subtree error counts, iterative traversal, aggregate totals and ordering |
 | Core scanning contracts | IDiskScanner, scan options/progress, injectable metadata entries |
+| Core caching contracts | Cache metadata, volume/journal checkpoints, query and transactional persistence contracts |
 | Core filtering/formatting | Name/path/extension/minimum-size rules and binary size formatting |
 | Core updating | Indexed per-batch deltas, snapshot outcome states, bounded change accumulation, monitor contracts |
 | Infrastructure scanning | Standard .NET metadata access, iterative directory enumeration, error isolation and throttled progress |
+| Infrastructure caching | Indexed SQLite snapshots, atomic replacement/diff updates, NTFS volume identity and USN journal reads |
 | Infrastructure updating/watching | Inclusion-aware snapshots, FileSystemWatcher event adapter, timed batches with generation checks |
 | Infrastructure export | Complete-scan CSV with local error details and transactional destination replacement |
 | App session coordinator | Serial scan/refresh/export/delete operations, cancellation, watcher sessions, reconciliation and result publication |
@@ -20,6 +22,10 @@
 ## Data flow and ownership
 
 The scanner returns a full logical-size tree. Recoverable errors belong only to the affected item; SubtreeErrorCount is an aggregate. Directory totals exclude the directory itself. Progress folders include the root while scanning; completion counters use the committed root's descendant counts.
+
+Each successful full scan atomically replaces the prior cache for that normalized root. The SQLite store retains individual entries, aggregate columns, allocated sizes, timestamps, attributes, file IDs, parent IDs, and local errors. Parent, path, root/time, and file-ID indexes support large scans and child queries. Incremental commits diff the reconciled tree and mutate only changed rows and aggregate ancestors inside one transaction.
+
+An NTFS cache stores the volume serial, journal ID, earliest valid USN, and next USN captured before scanning. Refresh verifies the volume and journal, detects wrap, reads journal records from the checkpoint, resolves names through cached file IDs, and sends normalized changes through the existing delta updater. Unsafe resolution or any invalid checkpoint falls back to the standard full scanner. Non-NTFS and inaccessible journals use the same fallback.
 
 ScanSessionCoordinator owns the mutable domain tree behind an asynchronous operation gate. The UI only reads a ResultSnapshot containing immutable row values and child path arrays. A projection is created once per committed revision. Filtering uses those rows on a worker thread, preserving original aggregate sizes and ancestors of matches. Only requested child view models are materialized.
 
@@ -37,6 +43,6 @@ Deletion is a session opt-in followed by confirmation. The coordinator rechecks 
 
 ## Platform and dependencies
 
-WPF, Windows shell actions, UAC elevation, and filesystem watching live outside Core. Core and Infrastructure target net10.0; App and its tests target net10.0-windows. Moq is used only by tests. No UI framework migration, native scanning implementation, or DI container was added.
+WPF, Windows shell actions, UAC elevation, filesystem watching, SQLite, and NTFS native calls live outside Core. Core and Infrastructure target net10.0; App and its tests target net10.0-windows. `Microsoft.Data.Sqlite` provides persistence, with the patched SQLitePCLRaw native bundle pinned directly. Moq is used only by tests. No UI framework migration or DI container was added.
 
 The unused starter project is not loaded by the solution. Production structured file logging, settings persistence, and a portable self-contained publishing profile remain separate follow-up milestones.

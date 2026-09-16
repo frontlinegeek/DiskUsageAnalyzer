@@ -14,6 +14,73 @@
         <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
             <Setter Property="Padding" Value="6"/>
         </Style>
+        <Style x:Key="ContextMenuIcon" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe MDL2 Assets"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Width" Value="16"/>
+            <Setter Property="Height" Value="16"/>
+            <Setter Property="TextAlignment" Value="Center"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style x:Key="ContextMenuSeparator" TargetType="Separator">
+            <Setter Property="Margin" Value="32,4,4,4"/>
+            <Setter Property="Height" Value="1"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Separator">
+                        <Border Height="1" Background="{DynamicResource DividerBrush}"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="ContextMenuItem" TargetType="MenuItem">
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Padding" Value="6,4"/>
+            <Setter Property="MinHeight" Value="28"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="MenuItem">
+                        <Border x:Name="MenuItemBorder" Background="{TemplateBinding Background}"
+                                Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="20"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <ContentPresenter ContentSource="Icon" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                <ContentPresenter Grid.Column="1" ContentSource="Header" Margin="6,0,12,0"
+                                                  VerticalAlignment="Center" RecognizesAccessKey="True"/>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="MenuItemBorder" Property="Background" Value="{DynamicResource SelectionBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.5"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="ThemedContextMenu" TargetType="ContextMenu">
+            <Setter Property="Background" Value="{DynamicResource ControlBackgroundBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource ControlBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ContextMenu">
+                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}" Padding="2" SnapsToDevicePixels="True">
+                            <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
         <HierarchicalDataTemplate DataType="{x:Type vm:DiskItemViewModel}" ItemsSource="{Binding Children}">
             <Grid Tag="ResultRow" Margin="{Binding RowMargin}" HorizontalAlignment="Left" ToolTip="{Binding FullPath}">
                 <Grid.ColumnDefinitions>
@@ -60,6 +127,16 @@
                     <Style TargetType="TreeViewItem">
                         <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
                         <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"/>
+                        <Setter Property="ContextMenu">
+                            <Setter.Value>
+                                <ContextMenu Style="{StaticResource ThemedContextMenu}"
+                                             DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                                    <MenuItem Style="{StaticResource ContextMenuItem}" Header="Rescan" Command="{x:Static app:MainWindow.RescanItemCommand}" CommandParameter="{Binding}">
+                                        <MenuItem.Icon><TextBlock Style="{StaticResource ContextMenuIcon}" Text="&#xE72C;"/></MenuItem.Icon>
+                                    </MenuItem>
+                                </ContextMenu>
+                            </Setter.Value>
+                        </Setter>
                         <EventSetter Event="Selected" Handler="FolderSelected"/>
                         <EventSetter Event="Loaded" Handler="FolderSelected"/>
                     </Style>
@@ -73,7 +150,10 @@
                 <TextBox Text="{Binding SelectedPath, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"/>
                 <WrapPanel>
                     <Button Content="Browse" Command="{Binding BrowseCommand}"/>
-                    <Button Content="Scan" Command="{Binding ScanCommand}"/>
+                    <Button Content="Full scan" Command="{Binding ScanCommand}"/>
+                    <Button Content="Load cache" Command="{Binding LoadCacheCommand}"/>
+                    <Button Content="Incremental refresh" Command="{Binding IncrementalRefreshCommand}"/>
+                    <Button Content="Delete cache" Command="{Binding DeleteCacheCommand}"/>
                     <Button Content="Cancel" Command="{Binding CancelCommand}"/>
                     <Button Content="Export CSV" Command="{Binding ExportCommand}"/>
                     <Button Content="Run as admin" Command="{Binding ElevateCommand}"
@@ -90,6 +170,10 @@
             </StackPanel>
             <StackPanel Grid.Row="1" Margin="0,4,0,8">
                 <TextBlock Text="{Binding Status}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                <Border Background="{DynamicResource UsageTrackBrush}" Padding="8,5" Margin="0,4,0,0"
+                        Visibility="{Binding IsCachedData, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <TextBlock Text="{Binding CacheStatus}" FontWeight="SemiBold"/>
+                </Border>
                 <WrapPanel Margin="0,4">
                     <TextBlock Text="{Binding AccessLevelText}" Margin="0,0,16,0" Foreground="{DynamicResource TextSecondaryBrush}"/>
                     <TextBlock Text="{Binding FilesScannedText, StringFormat=Files: {0}}" Margin="0,0,16,0"/>
@@ -147,11 +231,21 @@
                                 <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"/>
                                 <Setter Property="ContextMenu">
                                     <Setter.Value>
-                                        <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
-                                            <MenuItem Header="Open in Explorer" Command="{x:Static app:MainWindow.OpenResultCommand}" CommandParameter="{Binding}"/>
-                                            <MenuItem Header="Copy path" Command="{x:Static app:MainWindow.CopyResultPathCommand}" CommandParameter="{Binding}"/>
-                                            <Separator/>
-                                            <MenuItem Header="Delete" Command="{x:Static app:MainWindow.DeleteResultCommand}" CommandParameter="{Binding}"/>
+                                        <ContextMenu Style="{StaticResource ThemedContextMenu}"
+                                                     DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                                            <MenuItem Style="{StaticResource ContextMenuItem}" Header="Open in Explorer" Command="{x:Static app:MainWindow.OpenResultCommand}" CommandParameter="{Binding}">
+                                                <MenuItem.Icon><TextBlock Style="{StaticResource ContextMenuIcon}" Text="&#xE838;"/></MenuItem.Icon>
+                                            </MenuItem>
+                                            <MenuItem Style="{StaticResource ContextMenuItem}" Header="Copy path" Command="{x:Static app:MainWindow.CopyResultPathCommand}" CommandParameter="{Binding}">
+                                                <MenuItem.Icon><TextBlock Style="{StaticResource ContextMenuIcon}" Text="&#xE8C8;"/></MenuItem.Icon>
+                                            </MenuItem>
+                                            <MenuItem Style="{StaticResource ContextMenuItem}" Header="Rescan" Command="{x:Static app:MainWindow.RescanItemCommand}" CommandParameter="{Binding}">
+                                                <MenuItem.Icon><TextBlock Style="{StaticResource ContextMenuIcon}" Text="&#xE72C;"/></MenuItem.Icon>
+                                            </MenuItem>
+                                            <Separator Style="{StaticResource ContextMenuSeparator}"/>
+                                            <MenuItem Style="{StaticResource ContextMenuItem}" Header="Delete" Command="{x:Static app:MainWindow.DeleteResultCommand}" CommandParameter="{Binding}">
+                                                <MenuItem.Icon><TextBlock Style="{StaticResource ContextMenuIcon}" Text="&#xE74D;"/></MenuItem.Icon>
+                                            </MenuItem>
                                         </ContextMenu>
                                     </Setter.Value>
                                 </Setter>
@@ -161,5 +255,26 @@
                 </Grid>
             </ScrollViewer>
         </Grid>
+        <Border x:Name="CacheLoadingOverlay" Grid.ColumnSpan="3" Panel.ZIndex="100" Background="#99000000"
+                Visibility="{Binding IsLoadingCache, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <Border Width="480" MaxWidth="720" Padding="24" HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Background="{DynamicResource ControlBackgroundBrush}" BorderBrush="{DynamicResource ControlBorderBrush}"
+                    BorderThickness="1" CornerRadius="6">
+                <StackPanel>
+                    <TextBlock Text="Loading cached scan" FontSize="18" FontWeight="SemiBold"/>
+                    <TextBlock Text="Reading the saved filesystem hierarchy. Large caches can take a moment."
+                               Margin="0,6,0,14" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                    <ProgressBar Height="6" IsIndeterminate="True"/>
+                    <WrapPanel Margin="0,14,0,4">
+                        <TextBlock Text="{Binding FilesScannedText, StringFormat=Files: {0}}" Margin="0,0,18,0"/>
+                        <TextBlock Text="{Binding FoldersScannedText, StringFormat=Folders: {0}}" Margin="0,0,18,0"/>
+                        <TextBlock Text="{Binding BytesScannedText, StringFormat=Size: {0}}"/>
+                    </WrapPanel>
+                    <TextBlock Text="{Binding CurrentPath}" TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource TextSecondaryBrush}"/>
+                    <Button Content="Cancel" Command="{Binding CancelCommand}" HorizontalAlignment="Right" Margin="0,18,0,0"/>
+                </StackPanel>
+            </Border>
+        </Border>
     </Grid>
 </Window>

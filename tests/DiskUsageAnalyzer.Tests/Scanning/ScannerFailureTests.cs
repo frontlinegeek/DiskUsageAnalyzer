@@ -129,7 +129,6 @@ public sealed class ScannerFailureTests
 
     [Theory]
     [InlineData(true, false)]
-    [InlineData(false, true)]
     public async Task UnsupportedOptions_AreExplicit(bool links, bool allocated) => await Assert.ThrowsAsync<NotSupportedException>(() =>
         new FileSystemDiskScanner().ScanAsync(new ScanOptions { RootPath = Root, FollowReparsePoints = links,
             CalculateAllocatedSize = allocated }, null, default));

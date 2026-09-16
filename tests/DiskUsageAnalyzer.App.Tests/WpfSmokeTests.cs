@@ -9,6 +9,9 @@ using DiskUsageAnalyzer.App.Theming;
 using DiskUsageAnalyzer.Infrastructure.Scanning;
 using DiskUsageAnalyzer.Infrastructure.Export;
 using DiskUsageAnalyzer.Infrastructure.Watching;
+using DiskUsageAnalyzer.Core.Caching;
+using DiskUsageAnalyzer.Core.Models;
+using DiskUsageAnalyzer.Core.Scanning;
 using DiskUsageAnalyzer.Tests;
 using Moq;
 
@@ -49,7 +52,15 @@ public sealed class WpfSmokeTests
                     application.InitializeComponent();
                     var picker = new Mock<ICsvExportPicker>();
                     picker.Setup(p => p.PickOutputPath(It.IsAny<string>())).Returns(exportPath);
-                    var vm = new MainWindowViewModel(new ScanSessionCoordinator(new FileSystemDiskScanner(), new CsvDiskUsageExporter(), new FileSystemChangeMonitor()),
+                    var cache = new Mock<IScanCache>();
+                    cache.Setup(c => c.ReplaceAsync(It.IsAny<DiskItem>(), It.IsAny<ScanOptions>(),
+                            It.IsAny<VolumeIdentity?>(), It.IsAny<JournalCheckpoint?>(), It.IsAny<DateTimeOffset>(),
+                            It.IsAny<IProgress<ScanProgress>?>(), It.IsAny<CancellationToken>()))
+                        .Returns(Task.CompletedTask);
+                    cache.Setup(c => c.FindLatestAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                        .ReturnsAsync((CachedScanMetadata?)null);
+                    var vm = new MainWindowViewModel(new ScanSessionCoordinator(new FileSystemDiskScanner(),
+                            new CsvDiskUsageExporter(), new FileSystemChangeMonitor(), cache: cache.Object),
                         new FolderPicker(), picker.Object, new ElevatedRelauncher(), new FileActions(), new UserInteraction(), new UiDispatcher(), new FolderCatalog());
                     window = new MainWindow(vm) { ShowInTaskbar = false, Width = 1240, Height = 760 };
                     window.Show();
@@ -107,6 +118,29 @@ public sealed class WpfSmokeTests
                     Assert.Equal(((SolidColorBrush)application.Resources["ComboBoxTextBrush"]).Color,
                         ((SolidColorBrush)themeSelector.Foreground).Color);
                     Render(window, Path.Combine(artifacts, "dark.png"));
+                    var darkResultTree = (System.Windows.Controls.TreeView)window.FindName("ResultTree");
+                    var darkResultItem = Assert.IsType<System.Windows.Controls.TreeViewItem>(
+                        darkResultTree.ItemContainerGenerator.ContainerFromIndex(0));
+                    var contextMenu = Assert.IsType<System.Windows.Controls.ContextMenu>(darkResultItem.ContextMenu);
+                    contextMenu.PlacementTarget = darkResultItem;
+                    contextMenu.IsOpen = true;
+                    await dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+                    var menuItems = contextMenu.Items.OfType<System.Windows.Controls.MenuItem>().ToArray();
+                    Assert.Equal(4, menuItems.Length);
+                    Assert.All(menuItems, item => Assert.IsType<System.Windows.Controls.TextBlock>(item.Icon));
+                    Render(contextMenu, Path.Combine(artifacts, "dark-context-menu.png"));
+                    contextMenu.IsOpen = false;
+                    var cacheLoad = new TaskCompletionSource<CachedScan?>(TaskCreationOptions.RunContinuationsAsynchronously);
+                    cache.Setup(c => c.LoadLatestAsync(vm.SelectedPath!, It.IsAny<IProgress<ScanProgress>?>(),
+                            It.IsAny<CancellationToken>())).Returns(cacheLoad.Task);
+                    var cacheLoading = vm.LoadCacheCommand.ExecuteAsync();
+                    await dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+                    var cacheOverlay = (System.Windows.Controls.Border)window.FindName("CacheLoadingOverlay");
+                    Assert.Equal(Visibility.Visible, cacheOverlay.Visibility);
+                    Render(window, Path.Combine(artifacts, "dark-cache-loading.png"));
+                    cacheLoad.SetResult(null);
+                    await cacheLoading;
+                    Assert.Equal(Visibility.Collapsed, cacheOverlay.Visibility);
                     themeSelector.SelectedItem = ThemePreference.System;
                     vm.AutoRefreshChanges = false;
                     for (var index = 0; index < 80; index++)
@@ -153,10 +187,14 @@ public sealed class WpfSmokeTests
     }
 
     private static void Render(Window window, string path)
+        => Render((FrameworkElement)window, path);
+
+    private static void Render(FrameworkElement element, string path)
     {
-        window.UpdateLayout();
-        var bitmap = new RenderTargetBitmap((int)window.ActualWidth, (int)window.ActualHeight, 96, 96, PixelFormats.Pbgra32);
-        bitmap.Render(window);
+        element.UpdateLayout();
+        var bitmap = new RenderTargetBitmap(Math.Max(1, (int)Math.Ceiling(element.ActualWidth)),
+            Math.Max(1, (int)Math.Ceiling(element.ActualHeight)), 96, 96, PixelFormats.Pbgra32);
+        bitmap.Render(element);
         var pixels = new byte[bitmap.PixelWidth * bitmap.PixelHeight * 4];
         bitmap.CopyPixels(pixels, bitmap.PixelWidth * 4, 0);
         Assert.Contains(pixels, value => value != 0);

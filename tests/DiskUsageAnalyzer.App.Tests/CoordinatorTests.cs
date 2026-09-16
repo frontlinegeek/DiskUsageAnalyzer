@@ -161,4 +161,38 @@ public sealed class CoordinatorTests
         Assert.True(session.HasPending);
         Assert.Equal(10, session.Snapshot!.Rows[RootPath].SizeBytes);
     }
+
+    [Fact]
+    public async Task RescanFolder_ReplacesOnlySelectedSubtreeAndRecalculatesAncestors()
+    {
+        var folderPath = System.IO.Path.Combine(RootPath, "folder");
+        var siblingPath = System.IO.Path.Combine(RootPath, "sibling.bin");
+        var originalFolder = new DiskItem { Name = "folder", FullPath = folderPath, ItemType = DiskItemType.Directory };
+        originalFolder.Children.Add(new DiskItem { Name = "old.bin", FullPath = System.IO.Path.Combine(folderPath, "old.bin"),
+            ItemType = DiskItemType.File, LogicalSizeBytes = 10 });
+        DiskTree.Recalculate(originalFolder);
+        var root = Root();
+        root.Children.Add(originalFolder);
+        root.Children.Add(new DiskItem { Name = "sibling.bin", FullPath = siblingPath,
+            ItemType = DiskItemType.File, LogicalSizeBytes = 5 });
+        DiskTree.Recalculate(root);
+        var replacement = new DiskItem { Name = "folder", FullPath = folderPath, ItemType = DiskItemType.Directory };
+        replacement.Children.Add(new DiskItem { Name = "new.bin", FullPath = System.IO.Path.Combine(folderPath, "new.bin"),
+            ItemType = DiskItemType.File, LogicalSizeBytes = 30 });
+        DiskTree.Recalculate(replacement);
+        var scanner = new Mock<IDiskScanner>();
+        scanner.SetupSequence(s => s.ScanAsync(It.IsAny<ScanOptions>(), It.IsAny<IProgress<ScanProgress>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(root).ReturnsAsync(replacement);
+        using var session = new ScanSessionCoordinator(scanner.Object, Mock.Of<IDiskUsageExporter>(), Mock.Of<IFileSystemChangeMonitor>());
+        await session.ScanAsync(Options, null, default);
+
+        await session.RescanAsync(folderPath, null, default);
+
+        Assert.Equal(35, session.Snapshot!.Rows[RootPath].SizeBytes);
+        Assert.Equal(30, session.Snapshot.Rows[folderPath].SizeBytes);
+        Assert.Contains(siblingPath, session.Snapshot.Rows.Keys);
+        Assert.DoesNotContain(System.IO.Path.Combine(folderPath, "old.bin"), session.Snapshot.Rows.Keys);
+        scanner.Verify(s => s.ScanAsync(It.Is<ScanOptions>(o => o.RootPath == folderPath),
+            It.IsAny<IProgress<ScanProgress>>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
 }

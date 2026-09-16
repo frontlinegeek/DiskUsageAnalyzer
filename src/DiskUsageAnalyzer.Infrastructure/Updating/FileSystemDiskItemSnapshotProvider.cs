@@ -35,7 +35,9 @@ public sealed class FileSystemDiskItemSnapshotProvider : IDiskItemSnapshotProvid
             return new(SnapshotStatus.Available, new DiskItem { Name = Path.GetFileName(fullPath), FullPath = fullPath,
                 ItemType = entry.Attributes.HasFlag(FileAttributes.Directory) ? DiskItemType.Directory : DiskItemType.File,
                 LogicalSizeBytes = entry.Length, LastModified = entry.LastModified,
-                IsReparsePoint = entry.Attributes.HasFlag(FileAttributes.ReparsePoint) });
+                AllocatedSizeBytes = _options.CalculateAllocatedSize ? entry.AllocatedLength : null,
+                IsReparsePoint = entry.Attributes.HasFlag(FileAttributes.ReparsePoint), Attributes = entry.Attributes,
+                FileId = entry.FileId, ParentFileId = entry.ParentFileId });
         }
         catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
         { return new(SnapshotStatus.Missing); }

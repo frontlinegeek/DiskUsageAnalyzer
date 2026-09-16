@@ -1,4 +1,5 @@
 using System.IO;
+using DiskUsageAnalyzer.Core.Caching;
 using DiskUsageAnalyzer.Core.Models;
 using DiskUsageAnalyzer.Core.Scanning;
 using DiskUsageAnalyzer.Core.Updating;
@@ -12,6 +13,8 @@ public sealed class ScanSessionCoordinator : IDisposable
     private readonly IDiskUsageExporter _exporter;
     private readonly IFileSystemChangeMonitor _monitor;
     private readonly Func<ScanOptions, IDiskItemSnapshotProvider> _snapshots;
+    private readonly IScanCache? _cache;
+    private readonly IFileSystemJournal? _journal;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly CancellationTokenSource _lifetime = new();
     private readonly object _pendingGate = new();
@@ -23,16 +26,21 @@ public sealed class ScanSessionCoordinator : IDisposable
     private volatile bool _disposed;
     public long Session => Interlocked.Read(ref _session);
     public ResultSnapshot? Snapshot { get; private set; }
+    public CachedScanMetadata? CacheMetadata { get; private set; }
+    public bool IsDisplayingCachedData { get; private set; }
     public event Action? ChangesPending;
     public event Action<string>? MonitoringFailed;
 
     public ScanSessionCoordinator(IDiskScanner scanner, IDiskUsageExporter exporter,
-        IFileSystemChangeMonitor monitor, Func<ScanOptions, IDiskItemSnapshotProvider>? snapshots = null)
+        IFileSystemChangeMonitor monitor, Func<ScanOptions, IDiskItemSnapshotProvider>? snapshots = null,
+        IScanCache? cache = null, IFileSystemJournal? journal = null)
     {
         _scanner = scanner;
         _exporter = exporter;
         _monitor = monitor;
         _snapshots = snapshots ?? (options => new FileSystemDiskItemSnapshotProvider(options));
+        _cache = cache;
+        _journal = journal;
         _monitor.ChangesReady += OnChanges;
     }
 
@@ -47,19 +55,26 @@ public sealed class ScanSessionCoordinator : IDisposable
             {
                 RootPath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(options.RootPath)),
                 IncludeHiddenItems = options.IncludeHiddenItems,
-                IncludeSystemItems = options.IncludeSystemItems
+                IncludeSystemItems = options.IncludeSystemItems,
+                CalculateAllocatedSize = options.CalculateAllocatedSize
             };
             lock (_pendingGate) _pending = new ChangeAccumulator(options.RootPath);
             // Listen before scanning so changes during enumeration are reconciled afterward.
             StartMonitoring();
             try
             {
+                var checkpoint = _journal is null ? default : await _journal.CaptureAsync(options.RootPath, cancellation).ConfigureAwait(false);
                 var root = await _scanner.ScanAsync(options, progress, cancellation).ConfigureAwait(false);
                 cancellation.ThrowIfCancellationRequested();
                 var snapshot = await Task.Run(() => ResultSnapshot.Create(root), cancellation).ConfigureAwait(false);
                 cancellation.ThrowIfCancellationRequested();
+                var completed = DateTimeOffset.UtcNow;
+                if (_cache is not null)
+                    await _cache.ReplaceAsync(root, _options, checkpoint.Volume, checkpoint.Journal, completed, progress, cancellation).ConfigureAwait(false);
                 _root = root;
                 Snapshot = snapshot;
+                CacheMetadata = _cache is null ? null : await _cache.FindLatestAsync(root.FullPath, cancellation).ConfigureAwait(false);
+                IsDisplayingCachedData = false;
             }
             catch
             {
@@ -72,6 +87,154 @@ public sealed class ScanSessionCoordinator : IDisposable
                 throw;
             }
         }, token).ConfigureAwait(false);
+    }
+
+    public async Task<bool> LoadCachedAsync(string rootPath, IProgress<ScanProgress>? progress, CancellationToken token)
+    {
+        var loaded = false;
+        await RunAsync(async cancellation =>
+        {
+            if (_cache is null) return;
+            // Microsoft.Data.Sqlite can complete its async reads synchronously. Keep all database materialization
+            // and hierarchy construction off the WPF dispatcher for caches with millions of entries.
+            var cached = await Task.Run(() => _cache.LoadLatestAsync(rootPath, progress, cancellation), cancellation)
+                .ConfigureAwait(false);
+            if (cached is null) return;
+            _monitor.Stop();
+            Interlocked.Increment(ref _session);
+            _root = cached.Root;
+            _options = cached.Metadata.Options;
+            CacheMetadata = cached.Metadata;
+            IsDisplayingCachedData = true;
+            Snapshot = await Task.Run(() => ResultSnapshot.Create(cached.Root), cancellation).ConfigureAwait(false);
+            lock (_pendingGate) _pending = new ChangeAccumulator(cached.Root.FullPath);
+            StartMonitoring();
+            loaded = true;
+        }, token).ConfigureAwait(false);
+        return loaded;
+    }
+
+    public async Task<CacheRefreshResult> RefreshCachedAsync(IProgress<ScanProgress>? progress, CancellationToken token)
+    {
+        CacheRefreshResult? result = null;
+        await RunAsync(async cancellation =>
+        {
+            if (_root is null || _options is null || CacheMetadata is null || _journal is null)
+                throw new InvalidOperationException("No cached scan is loaded.");
+            var cached = new CachedScan(CacheMetadata, _root);
+            var changes = await _journal.ReadAsync(cached, cancellation).ConfigureAwait(false);
+            if (changes.Status != IncrementalReadStatus.Available)
+            {
+                var detail = changes.Reason ?? "The journal cannot safely update this cache.";
+                var checkpoint = await _journal.CaptureAsync(_options.RootPath, cancellation).ConfigureAwait(false);
+                var root = await _scanner.ScanAsync(_options, progress, cancellation).ConfigureAwait(false);
+                var completed = DateTimeOffset.UtcNow;
+                if (_cache is not null) await _cache.ReplaceAsync(root, _options, checkpoint.Volume, checkpoint.Journal,
+                    completed, progress, cancellation).ConfigureAwait(false);
+                _root = root; Snapshot = ResultSnapshot.Create(root); IsDisplayingCachedData = false;
+                CacheMetadata = _cache is null ? null : await _cache.FindLatestAsync(root.FullPath, cancellation).ConfigureAwait(false);
+                result = new(CacheRefreshKind.FullScan, completed, detail);
+                return;
+            }
+            if (changes.Changes.Count > 0)
+            {
+                var update = new DiskUsageDeltaUpdater().Apply(_root, changes.Changes, _snapshots(_options), cancellation);
+                foreach (var path in MinimalPaths(update.RescanPaths))
+                {
+                    var replacement = await _scanner.ScanAsync(OptionsFor(path), progress, cancellation).ConfigureAwait(false);
+                    if (!string.Equals(path, _root.FullPath, StringComparison.OrdinalIgnoreCase)
+                        && replacement.Errors.Any(error => error.ExceptionType is nameof(DirectoryNotFoundException) or nameof(FileNotFoundException)))
+                        new DiskUsageDeltaUpdater().Apply(_root,
+                            [new DiskUsageChange { Kind = DiskUsageChangeKind.Deleted, FullPath = path }], _snapshots(_options), cancellation);
+                    else Replace(path, replacement);
+                }
+            }
+            var updated = DateTimeOffset.UtcNow;
+            if (_cache is not null)
+                await _cache.UpdateAsync(CacheMetadata, _root, changes.Checkpoint, updated, progress, cancellation).ConfigureAwait(false);
+            Snapshot = await Task.Run(() => ResultSnapshot.Create(_root), cancellation).ConfigureAwait(false);
+            CacheMetadata = _cache is null ? CacheMetadata with { CompletedAt = updated, Journal = changes.Checkpoint }
+                : await _cache.FindLatestAsync(_root.FullPath, cancellation).ConfigureAwait(false);
+            IsDisplayingCachedData = false;
+            result = new(CacheRefreshKind.Incremental, updated, $"Applied {changes.Changes.Count:N0} journal changes.");
+        }, token).ConfigureAwait(false);
+        return result!;
+    }
+
+    public Task RescanAsync(string path, IProgress<ScanProgress>? progress, CancellationToken token) => RunAsync(async cancellation =>
+    {
+        if (_root is null || _options is null) throw new InvalidOperationException("No current scan.");
+        path = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+        if (!DiskTree.ContainsPath(_root.FullPath, path))
+            throw new InvalidOperationException("The selected folder is outside the current scan.");
+        var current = DiskTree.Enumerate(_root).SingleOrDefault(item =>
+            string.Equals(item.FullPath, path, StringComparison.OrdinalIgnoreCase));
+        if (current is null || current.ItemType == DiskItemType.File || current.IsReparsePoint)
+            throw new InvalidOperationException("Only scanned folders and drives can be rescanned.");
+
+        var rescanningRoot = string.Equals(path, _root.FullPath, StringComparison.OrdinalIgnoreCase);
+        // A subtree rescan does not reconcile changes elsewhere, so it must not advance the volume-wide USN checkpoint.
+        var checkpoint = rescanningRoot && _journal is not null
+            ? await _journal.CaptureAsync(_root.FullPath, cancellation).ConfigureAwait(false)
+            : (CacheMetadata?.Volume, CacheMetadata?.Journal);
+        var replacement = await _scanner.ScanAsync(OptionsFor(path), progress, cancellation).ConfigureAwait(false);
+        cancellation.ThrowIfCancellationRequested();
+
+        var previousRoot = _root;
+        if (string.Equals(path, _root.FullPath, StringComparison.OrdinalIgnoreCase)) _root = replacement;
+        else Replace(path, replacement);
+        ResultSnapshot? candidateSnapshot = null;
+        var committed = false;
+        try
+        {
+            candidateSnapshot = await Task.Run(() => ResultSnapshot.Create(_root), cancellation).ConfigureAwait(false);
+            var completed = DateTimeOffset.UtcNow;
+            if (_cache is not null)
+            {
+                if (CacheMetadata is null)
+                    await _cache.ReplaceAsync(_root, _options, checkpoint.Item1,
+                        rescanningRoot ? checkpoint.Item2 : null,
+                        completed, progress, cancellation).ConfigureAwait(false);
+                else
+                    await _cache.UpdateAsync(CacheMetadata, _root, checkpoint.Item2,
+                        completed, progress, cancellation).ConfigureAwait(false);
+                committed = true;
+                CacheMetadata = await _cache.FindLatestAsync(_root.FullPath, cancellation).ConfigureAwait(false);
+            }
+            else committed = true;
+            Snapshot = candidateSnapshot;
+            IsDisplayingCachedData = false;
+        }
+        catch
+        {
+            if (!committed)
+            {
+                if (string.Equals(path, previousRoot.FullPath, StringComparison.OrdinalIgnoreCase)) _root = previousRoot;
+                else Replace(path, current);
+            }
+            else if (candidateSnapshot is not null) Snapshot = candidateSnapshot;
+            throw;
+        }
+    }, token);
+
+    public Task DeleteCacheAsync(string rootPath, CancellationToken token) => RunAsync(async cancellation =>
+    {
+        if (_cache is null) return;
+        await _cache.DeleteAsync(rootPath, cancellation).ConfigureAwait(false);
+        if (CacheMetadata is not null && string.Equals(CacheMetadata.RootPath,
+                Path.TrimEndingDirectorySeparator(Path.GetFullPath(rootPath)), StringComparison.OrdinalIgnoreCase))
+        {
+            CacheMetadata = null;
+            IsDisplayingCachedData = false;
+        }
+    }, token);
+
+    private static IReadOnlyList<string> MinimalPaths(IEnumerable<string> paths)
+    {
+        var result = new List<string>();
+        foreach (var path in paths.OrderBy(path => path.Length))
+            if (!result.Any(parent => DiskTree.ContainsPath(parent, path))) result.Add(path);
+        return result;
     }
 
     public void SetWatching(bool enabled)
@@ -164,7 +327,8 @@ public sealed class ScanSessionCoordinator : IDisposable
     {
         RootPath = path,
         IncludeHiddenItems = _options!.IncludeHiddenItems,
-        IncludeSystemItems = _options.IncludeSystemItems
+        IncludeSystemItems = _options.IncludeSystemItems,
+        CalculateAllocatedSize = _options.CalculateAllocatedSize
     };
 
     private void Replace(string path, DiskItem replacement)

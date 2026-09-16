@@ -1,4 +1,5 @@
 using System.Windows;
+using System.IO;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -10,6 +11,7 @@ using DiskUsageAnalyzer.App.ViewModels;
 using DiskUsageAnalyzer.Infrastructure.Export;
 using DiskUsageAnalyzer.Infrastructure.Scanning;
 using DiskUsageAnalyzer.Infrastructure.Watching;
+using DiskUsageAnalyzer.Infrastructure.Caching;
 
 namespace DiskUsageAnalyzer.App;
 
@@ -23,6 +25,7 @@ public partial class MainWindow : Window
     public static readonly RoutedUICommand OpenResultCommand = new("Open in Explorer", nameof(OpenResultCommand), typeof(MainWindow));
     public static readonly RoutedUICommand CopyResultPathCommand = new("Copy path", nameof(CopyResultPathCommand), typeof(MainWindow));
     public static readonly RoutedUICommand DeleteResultCommand = new("Delete", nameof(DeleteResultCommand), typeof(MainWindow));
+    public static readonly RoutedUICommand RescanItemCommand = new("Rescan", nameof(RescanItemCommand), typeof(MainWindow));
 
     public MainWindow() : this(CreateViewModel()) { }
 
@@ -37,6 +40,7 @@ public partial class MainWindow : Window
         CommandBindings.Add(new CommandBinding(OpenResultCommand, ExecuteOpenResult, CanExecuteOpenResult));
         CommandBindings.Add(new CommandBinding(CopyResultPathCommand, ExecuteCopyResultPath, CanExecuteCopyResultPath));
         CommandBindings.Add(new CommandBinding(DeleteResultCommand, ExecuteDeleteResult, CanExecuteDeleteResult));
+        CommandBindings.Add(new CommandBinding(RescanItemCommand, ExecuteRescanItem, CanExecuteRescanItem));
 
         var initialPath = Environment.GetCommandLineArgs().Skip(1).FirstOrDefault();
         if (!string.IsNullOrWhiteSpace(initialPath))
@@ -47,7 +51,11 @@ public partial class MainWindow : Window
         DataContext = viewModel;
         viewModel.ResultViewChanging += SaveTreePosition;
         viewModel.ResultViewChanged += RestoreTreePosition;
-        Loaded += async (_, _) => await viewModel.LoadRootsAsync();
+        Loaded += async (_, _) =>
+        {
+            await viewModel.LoadRootsAsync();
+            if (!string.IsNullOrWhiteSpace(viewModel.SelectedPath)) await viewModel.LoadSelectedCacheAsync();
+        };
     }
 
     private void ThemeSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -70,10 +78,16 @@ public partial class MainWindow : Window
         return IntPtr.Zero;
     }
 
-    private static MainWindowViewModel CreateViewModel() => new(
-        new ScanSessionCoordinator(new FileSystemDiskScanner(), new CsvDiskUsageExporter(), new FileSystemChangeMonitor()),
+    private static MainWindowViewModel CreateViewModel()
+    {
+        var cachePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "DiskUsageAnalyzer", "scan-cache.db");
+        return new(
+        new ScanSessionCoordinator(new FileSystemDiskScanner(), new CsvDiskUsageExporter(), new FileSystemChangeMonitor(),
+            cache: new SqliteScanCache(cachePath), journal: new WindowsUsnJournal()),
         new FolderPicker(), new CsvExportPicker(), new ElevatedRelauncher(), new FileActions(), new UserInteraction(),
         new UiDispatcher(), new FolderCatalog());
+    }
 
     private void FolderSelected(object sender, RoutedEventArgs e)
     {
@@ -222,5 +236,17 @@ public partial class MainWindow : Window
         {
             viewModel.DeleteItemCommand.Execute(e.Parameter);
         }
+    }
+
+    private void CanExecuteRescanItem(object sender, CanExecuteRoutedEventArgs e)
+    {
+        e.CanExecute = DataContext is MainWindowViewModel viewModel
+            && viewModel.RescanItemCommand.CanExecute(e.Parameter);
+    }
+
+    private void ExecuteRescanItem(object sender, ExecutedRoutedEventArgs e)
+    {
+        if (DataContext is MainWindowViewModel viewModel && viewModel.RescanItemCommand.CanExecute(e.Parameter))
+            viewModel.RescanItemCommand.Execute(e.Parameter);
     }
 }

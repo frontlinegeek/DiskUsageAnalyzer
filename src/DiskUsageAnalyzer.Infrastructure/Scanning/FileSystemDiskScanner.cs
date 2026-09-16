@@ -19,8 +19,8 @@ public sealed class FileSystemDiskScanner : IDiskScanner
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentException.ThrowIfNullOrWhiteSpace(options.RootPath);
-        if (options.FollowReparsePoints || options.CalculateAllocatedSize)
-            throw new NotSupportedException("Link traversal and allocated sizes are not supported.");
+        if (options.FollowReparsePoints)
+            throw new NotSupportedException("Link traversal is not supported.");
         return Task.Run(() => Scan(options, progress, cancellationToken), cancellationToken);
     }
 
@@ -73,6 +73,9 @@ public sealed class FileSystemDiskScanner : IDiskScanner
                     throw new IOException("Scan root must be a directory.");
                 root.LastModified = entry.LastModified;
                 root.IsReparsePoint = (entry.Attributes & FileAttributes.ReparsePoint) != 0;
+                root.Attributes = entry.Attributes;
+                root.FileId = entry.FileId;
+                root.ParentFileId = entry.ParentFileId;
                 if (entry.Error is not null) Record(root, entry.Error);
             }
             catch (Exception ex) when (FileSystemMetadata.IsRecoverable(ex))
@@ -107,8 +110,12 @@ public sealed class FileSystemDiskScanner : IDiskScanner
                             FullPath = entry.FullPath,
                             ItemType = isDirectory ? DiskItemType.Directory : DiskItemType.File,
                             LogicalSizeBytes = entry.Length,
+                            AllocatedSizeBytes = options.CalculateAllocatedSize ? entry.AllocatedLength : null,
                             LastModified = entry.LastModified,
-                            IsReparsePoint = entry.Attributes.HasFlag(FileAttributes.ReparsePoint)
+                            IsReparsePoint = entry.Attributes.HasFlag(FileAttributes.ReparsePoint),
+                            Attributes = entry.Attributes,
+                            FileId = entry.FileId,
+                            ParentFileId = directory.FileId
                         };
                         directory.Children.Add(item);
                         if (entry.Error is not null) Record(item, entry.Error);

@@ -6,10 +6,14 @@ Windows-focused .NET 10 desktop disk usage analyzer.
 
 - `src/DiskUsageAnalyzer.App`: WPF UI and app-layer view models.
 - `src/DiskUsageAnalyzer.Core`: UI-independent domain models, scan contracts, formatting, and filtering.
-- `src/DiskUsageAnalyzer.Infrastructure`: file-system scanner and CSV export implementation.
+- `src/DiskUsageAnalyzer.Infrastructure`: file-system scanner, SQLite cache, NTFS journal, and CSV export implementation.
 - `tests/DiskUsageAnalyzer.Tests`: unit and integration-style scanner tests using temporary folders.
 
-The scanner reads metadata only. Reparse points are marked but never traversed; requesting link traversal or allocated sizes currently produces an explicit unsupported-option error. Size totals are logical bytes, not physical disk allocation.
+The scanner reads metadata only. Reparse points are marked but never traversed. Logical and allocated sizes are retained where Windows can report both values, along with file attributes and NTFS file IDs.
+
+Completed scans are stored in `%LOCALAPPDATA%\DiskUsageAnalyzer\scan-cache.db`. Selecting a previously scanned root or using **Load cache** displays its last completed result and timestamp. **Incremental refresh** validates the volume serial and NTFS USN journal checkpoint, applies creates, deletes, renames, moves, and metadata changes, and recalculates directory totals. It automatically performs a full scan if the journal is unavailable, replaced, wrapped, or cannot be reconciled safely. **Full scan** always rebuilds the selected root, and **Delete cache** removes its persisted scan without deleting filesystem content.
+
+SQLite replacement and incremental updates run in transactions. A canceled or failed write leaves the prior completed cache intact. The cache stores individual entries and errors, has parent/path/file-ID indexes, supports multiple roots, and exposes child queries for future fully virtualized result views.
 
 Deletion is disabled on every launch. Enabling deletion permits confirmed permanent removal of eligible descendants of the current scan root. Drives, the scan root, reparse points, and paths reached through reparse points are rejected. There is no recycle-bin integration. Filesystem permissions and concurrent external changes can still cause an operation to fail.
 
@@ -46,7 +50,7 @@ for the current user, creates a Start menu shortcut, and does not require the
 Install [Inno Setup 6](https://jrsoftware.org/isinfo.php), then run:
 
 ```powershell
-.\installer\Build-Installer.cmd -Version 1.0.2
+.\installer\Build-Installer.cmd -Version 1.1.0
 ```
 
 The finished setup executable is written to `artifacts\installer`. To use an
@@ -55,7 +59,7 @@ Inno Setup compiler outside its standard location, pass its full path with
 
 ## Tests and Diagnostics
 
-The solution contains xUnit/Moq suites for Core/Infrastructure and Windows application behavior. Filesystem integration tests use isolated temporary folders. Deletion decisions use mocks. WPF rendering tests are opt-in:
+The solution contains xUnit/Moq suites for Core/Infrastructure and Windows application behavior. Filesystem integration tests use isolated temporary folders. Cache tests cover persistence, multiple roots, rollback, journal fallback, rename/move/delete reconciliation, and aggregate-size propagation. Deletion decisions use mocks. WPF rendering tests are opt-in:
 
 ```powershell
 $env:DUA_UI_SMOKE = '1'
