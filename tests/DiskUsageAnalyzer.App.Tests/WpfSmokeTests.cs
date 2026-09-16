@@ -117,6 +117,25 @@ public sealed class WpfSmokeTests
                         ((SolidColorBrush)application.Resources["WindowBackgroundBrush"]).Color);
                     Assert.True(darkThemeMenuItem.IsChecked);
                     Render(window, Path.Combine(artifacts, "dark.png"));
+                    var scanMenuItem = (System.Windows.Controls.MenuItem)window.FindName("ScanMenuItem");
+                    Assert.False((bool)scanMenuItem.FindResource(SystemParameters.DropShadowKey));
+                    Assert.All(scanMenuItem.Items.OfType<System.Windows.Controls.MenuItem>(),
+                        item => Assert.IsType<System.Windows.Controls.TextBlock>(item.Icon));
+                    scanMenuItem.IsSubmenuOpen = true;
+                    await dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+                    var scanMenuPopup = Assert.IsType<System.Windows.Controls.Primitives.Popup>(
+                        scanMenuItem.Template.FindName("PART_Popup", scanMenuItem));
+                    var scanMenuContent = Assert.IsAssignableFrom<FrameworkElement>(scanMenuPopup.Child);
+                    Assert.DoesNotContain(Descendants(scanMenuContent),
+                        element => element.GetType().Name.Contains("SystemDropShadowChrome", StringComparison.Ordinal));
+                    Render(scanMenuContent, Path.Combine(artifacts, "dark-scan-menu.png"));
+                    scanMenuItem.IsSubmenuOpen = false;
+                    var viewMenuItem = (System.Windows.Controls.MenuItem)window.FindName("ViewMenuItem");
+                    Assert.All(viewMenuItem.Items.OfType<System.Windows.Controls.MenuItem>(),
+                        item => Assert.IsType<System.Windows.Controls.TextBlock>(item.Icon));
+                    var themeMenuItem = (System.Windows.Controls.MenuItem)window.FindName("ThemeMenuItem");
+                    Assert.All(themeMenuItem.Items.OfType<System.Windows.Controls.MenuItem>(),
+                        item => Assert.IsType<System.Windows.Controls.TextBlock>(item.Icon));
                     var darkResultTree = (System.Windows.Controls.TreeView)window.FindName("ResultTree");
                     var darkResultItem = Assert.IsType<System.Windows.Controls.TreeViewItem>(
                         darkResultTree.ItemContainerGenerator.ContainerFromIndex(0));
