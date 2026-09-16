@@ -108,16 +108,34 @@ public sealed class WpfSmokeTests
                     position = selectedFolder.TransformToAncestor(folderTree).Transform(new Point());
                     Assert.InRange(position.Y, 0, folderTree.ActualHeight - 1);
                     Render(window, Path.Combine(artifacts, "narrow.png"));
-                    var themeSelector = (System.Windows.Controls.ComboBox)window.FindName("ThemeSelector");
-                    themeSelector.SelectedItem = ThemePreference.Dark;
+                    var darkThemeMenuItem = (System.Windows.Controls.MenuItem)window.FindName("DarkThemeMenuItem");
+                    darkThemeMenuItem.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.MenuItem.ClickEvent));
                     await dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
                     Assert.Equal(ThemePreference.Dark, application.ThemeManager.Preference);
                     Assert.True(application.ThemeManager.IsDarkTheme);
                     Assert.Equal(Color.FromRgb(0x17, 0x1A, 0x1F),
                         ((SolidColorBrush)application.Resources["WindowBackgroundBrush"]).Color);
-                    Assert.Equal(((SolidColorBrush)application.Resources["ComboBoxTextBrush"]).Color,
-                        ((SolidColorBrush)themeSelector.Foreground).Color);
+                    Assert.True(darkThemeMenuItem.IsChecked);
                     Render(window, Path.Combine(artifacts, "dark.png"));
+                    var scanMenuItem = (System.Windows.Controls.MenuItem)window.FindName("ScanMenuItem");
+                    Assert.False((bool)scanMenuItem.FindResource(SystemParameters.DropShadowKey));
+                    Assert.All(scanMenuItem.Items.OfType<System.Windows.Controls.MenuItem>(),
+                        item => Assert.IsType<System.Windows.Controls.TextBlock>(item.Icon));
+                    scanMenuItem.IsSubmenuOpen = true;
+                    await dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+                    var scanMenuPopup = Assert.IsType<System.Windows.Controls.Primitives.Popup>(
+                        scanMenuItem.Template.FindName("PART_Popup", scanMenuItem));
+                    var scanMenuContent = Assert.IsAssignableFrom<FrameworkElement>(scanMenuPopup.Child);
+                    Assert.DoesNotContain(Descendants(scanMenuContent),
+                        element => element.GetType().Name.Contains("SystemDropShadowChrome", StringComparison.Ordinal));
+                    Render(scanMenuContent, Path.Combine(artifacts, "dark-scan-menu.png"));
+                    scanMenuItem.IsSubmenuOpen = false;
+                    var viewMenuItem = (System.Windows.Controls.MenuItem)window.FindName("ViewMenuItem");
+                    Assert.All(viewMenuItem.Items.OfType<System.Windows.Controls.MenuItem>(),
+                        item => Assert.IsType<System.Windows.Controls.TextBlock>(item.Icon));
+                    var themeMenuItem = (System.Windows.Controls.MenuItem)window.FindName("ThemeMenuItem");
+                    Assert.All(themeMenuItem.Items.OfType<System.Windows.Controls.MenuItem>(),
+                        item => Assert.IsType<System.Windows.Controls.TextBlock>(item.Icon));
                     var darkResultTree = (System.Windows.Controls.TreeView)window.FindName("ResultTree");
                     var darkResultItem = Assert.IsType<System.Windows.Controls.TreeViewItem>(
                         darkResultTree.ItemContainerGenerator.ContainerFromIndex(0));
@@ -141,7 +159,8 @@ public sealed class WpfSmokeTests
                     cacheLoad.SetResult(null);
                     await cacheLoading;
                     Assert.Equal(Visibility.Collapsed, cacheOverlay.Visibility);
-                    themeSelector.SelectedItem = ThemePreference.System;
+                    var systemThemeMenuItem = (System.Windows.Controls.MenuItem)window.FindName("SystemThemeMenuItem");
+                    systemThemeMenuItem.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.MenuItem.ClickEvent));
                     vm.AutoRefreshChanges = false;
                     for (var index = 0; index < 80; index++)
                         await File.WriteAllBytesAsync(Path.Combine(temp.Path, $"extra-{index:D2}.bin"), new byte[10]);

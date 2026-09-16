@@ -2,10 +2,17 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:app="clr-namespace:DiskUsageAnalyzer.App"
+        xmlns:system="clr-namespace:System;assembly=mscorlib"
         xmlns:vm="clr-namespace:DiskUsageAnalyzer.App.ViewModels"
         Title="Disk Usage Analyzer" Height="760" Width="1240" MinHeight="560" MinWidth="800"
         Background="{DynamicResource WindowBackgroundBrush}"
         Foreground="{DynamicResource TextPrimaryBrush}">
+    <Window.InputBindings>
+        <KeyBinding Key="O" Modifiers="Control" Command="{Binding BrowseCommand}"/>
+        <KeyBinding Key="E" Modifiers="Control" Command="{Binding ExportCommand}"/>
+        <KeyBinding Key="F5" Command="{Binding ScanCommand}"/>
+        <KeyBinding Key="Escape" Command="{Binding CancelCommand}"/>
+    </Window.InputBindings>
     <Window.Resources>
         <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
             <Setter Property="Padding" Value="10,6"/>
@@ -14,13 +21,121 @@
         <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
             <Setter Property="Padding" Value="6"/>
         </Style>
-        <Style x:Key="ContextMenuIcon" TargetType="TextBlock">
+        <Style x:Key="ToolbarButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Margin" Value="6,0,0,0"/>
+            <Setter Property="MinWidth" Value="72"/>
+        </Style>
+        <Style x:Key="PrimaryToolbarButton" TargetType="Button" BasedOn="{StaticResource ToolbarButton}">
+            <Setter Property="Background" Value="{DynamicResource AccentBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+        <Style x:Key="MenuIcon" TargetType="TextBlock">
             <Setter Property="FontFamily" Value="Segoe MDL2 Assets"/>
             <Setter Property="FontSize" Value="14"/>
             <Setter Property="Width" Value="16"/>
             <Setter Property="Height" Value="16"/>
             <Setter Property="TextAlignment" Value="Center"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style x:Key="TopMenuItem" TargetType="MenuItem">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="MenuItem">
+                        <Grid>
+                            <Border x:Name="HeaderBorder" Background="{TemplateBinding Background}" Padding="8,4">
+                                <ContentPresenter ContentSource="Header" RecognizesAccessKey="True"
+                                                  VerticalAlignment="Center"/>
+                            </Border>
+                            <Popup x:Name="PART_Popup" AllowsTransparency="True" Focusable="False"
+                                   IsOpen="{Binding IsSubmenuOpen, RelativeSource={RelativeSource TemplatedParent}}"
+                                   Placement="Bottom" PlacementTarget="{Binding ElementName=HeaderBorder}"
+                                   PopupAnimation="None">
+                                <Border Background="{DynamicResource ControlBackgroundBrush}"
+                                        BorderBrush="{DynamicResource ControlBorderBrush}" BorderThickness="1" Padding="2">
+                                    <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="HeaderBorder" Property="Background" Value="{DynamicResource SelectionBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsSubmenuOpen" Value="True">
+                                <Setter TargetName="HeaderBorder" Property="Background" Value="{DynamicResource SelectionBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.5"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="DropDownMenuItem" TargetType="MenuItem">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="MenuItem">
+                        <Grid>
+                            <Border x:Name="ItemBorder" Background="{TemplateBinding Background}" Padding="4,3">
+                                <Grid MinHeight="22">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="24"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="16"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid>
+                                        <ContentPresenter x:Name="IconPresenter" ContentSource="Icon"
+                                                          HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="CheckGlyph" Style="{StaticResource MenuIcon}" Text="&#xE73E;"
+                                                   Visibility="Collapsed"/>
+                                    </Grid>
+                                    <ContentPresenter Grid.Column="1" ContentSource="Header" Margin="4,0,16,0"
+                                                      RecognizesAccessKey="True" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="2" Text="{TemplateBinding InputGestureText}"
+                                               Foreground="{DynamicResource TextSecondaryBrush}" Margin="12,0,8,0"
+                                               VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="SubmenuArrow" Grid.Column="3" Style="{StaticResource MenuIcon}"
+                                               Text="&#xE76C;" Visibility="Collapsed"/>
+                                </Grid>
+                            </Border>
+                            <Popup x:Name="PART_Popup" AllowsTransparency="True" Focusable="False"
+                                   IsOpen="{Binding IsSubmenuOpen, RelativeSource={RelativeSource TemplatedParent}}"
+                                   Placement="Right" PlacementTarget="{Binding ElementName=ItemBorder}"
+                                   PopupAnimation="None">
+                                <Border Background="{DynamicResource ControlBackgroundBrush}"
+                                        BorderBrush="{DynamicResource ControlBorderBrush}" BorderThickness="1" Padding="2">
+                                    <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource SelectionBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsSubmenuOpen" Value="True">
+                                <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource SelectionBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="IconPresenter" Property="Visibility" Value="Collapsed"/>
+                                <Setter TargetName="CheckGlyph" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                            <Trigger Property="HasItems" Value="True">
+                                <Setter TargetName="SubmenuArrow" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.5"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
         <Style x:Key="ContextMenuSeparator" TargetType="Separator">
             <Setter Property="Margin" Value="32,4,4,4"/>
@@ -118,10 +233,102 @@
             </StackPanel>
         </HierarchicalDataTemplate>
     </Window.Resources>
-    <Grid Margin="12">
+    <DockPanel>
+        <Menu DockPanel.Dock="Top" Background="{DynamicResource SurfaceBrush}"
+              BorderBrush="{DynamicResource DividerBrush}" BorderThickness="0,0,0,1">
+            <Menu.Resources>
+                <system:Boolean x:Key="{x:Static SystemParameters.DropShadowKey}">False</system:Boolean>
+                <Style TargetType="MenuItem" BasedOn="{StaticResource DropDownMenuItem}"/>
+                <Style TargetType="Separator">
+                    <Setter Property="Margin" Value="30,3,4,3"/>
+                    <Setter Property="Height" Value="1"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="Separator">
+                                <Border Height="1" Background="{DynamicResource DividerBrush}"/>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </Menu.Resources>
+            <MenuItem Header="_File" Style="{StaticResource TopMenuItem}">
+                <MenuItem Header="_Browse for folder..." Command="{Binding BrowseCommand}" InputGestureText="Ctrl+O">
+                    <MenuItem.Icon><TextBlock Style="{StaticResource MenuIcon}" Text="&#xE838;"/></MenuItem.Icon>
+                </MenuItem>
+                <Separator/>
+                <MenuItem Header="_Export CSV..." Command="{Binding ExportCommand}" InputGestureText="Ctrl+E">
+                    <MenuItem.Icon><TextBlock Style="{StaticResource MenuIcon}" Text="&#xEDE1;"/></MenuItem.Icon>
+                </MenuItem>
+                <Separator/>
+                <MenuItem Header="E_xit" Click="ExitMenuItemClick">
+                    <MenuItem.Icon><TextBlock Style="{StaticResource MenuIcon}" Text="&#xE7E8;"/></MenuItem.Icon>
+                </MenuItem>
+            </MenuItem>
+            <MenuItem x:Name="ScanMenuItem" Header="_Scan" Style="{StaticResource TopMenuItem}">
+                <MenuItem Header="_Full scan" Command="{Binding ScanCommand}" InputGestureText="F5">
+                    <MenuItem.Icon><TextBlock Style="{StaticResource MenuIcon}" Text="&#xE8FE;"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="_Incremental refresh" Command="{Binding IncrementalRefreshCommand}">
+                    <MenuItem.Icon><TextBlock Style="{StaticResource MenuIcon}" Text="&#xE895;"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="_Cancel" Command="{Binding CancelCommand}" InputGestureText="Esc">
+                    <MenuItem.Icon><TextBlock Style="{StaticResource MenuIcon}" Text="&#xE711;"/></MenuItem.Icon>
+                </MenuItem>
+                <Separator/>
+                <MenuItem Header="_Load cached scan" Command="{Binding LoadCacheCommand}">
+                    <MenuItem.Icon><TextBlock Style="{StaticResource MenuIcon}" Text="&#xE896;"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="_Delete cached scan" Command="{Binding DeleteCacheCommand}">
+                    <MenuItem.Icon><TextBlock Style="{StaticResource MenuIcon}" Text="&#xE74D;"/></MenuItem.Icon>
+                </MenuItem>
+                <Separator/>
+                <MenuItem Header="Refresh _drives" Command="{Binding RefreshFoldersCommand}">
+                    <MenuItem.Icon><TextBlock Style="{StaticResource MenuIcon}" Text="&#xE72C;"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Run as _administrator" Command="{Binding ElevateCommand}"
+                          Visibility="{Binding CanElevate, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <MenuItem.Icon><TextBlock Style="{StaticResource MenuIcon}" Text="&#xE7EF;"/></MenuItem.Icon>
+                </MenuItem>
+            </MenuItem>
+            <MenuItem x:Name="ViewMenuItem" Header="_View" Style="{StaticResource TopMenuItem}">
+                <MenuItem Header="_Largest files" IsCheckable="True" IsChecked="{Binding LargestFiles, Mode=TwoWay}">
+                    <MenuItem.Icon><TextBlock Style="{StaticResource MenuIcon}" Text="&#xE8FD;"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="_Smallest first" IsCheckable="True" IsChecked="{Binding SmallestFirst, Mode=TwoWay}"
+                          IsEnabled="{Binding LargestFiles}">
+                    <MenuItem.Icon><TextBlock Style="{StaticResource MenuIcon}" Text="&#xE8CB;"/></MenuItem.Icon>
+                </MenuItem>
+                <Separator/>
+                <MenuItem Header="_Auto refresh changes" IsCheckable="True" IsChecked="{Binding AutoRefreshChanges, Mode=TwoWay}">
+                    <MenuItem.Icon><TextBlock Style="{StaticResource MenuIcon}" Text="&#xE895;"/></MenuItem.Icon>
+                </MenuItem>
+                <Separator/>
+                <MenuItem x:Name="ThemeMenuItem" Header="_Theme">
+                    <MenuItem.Icon><TextBlock Style="{StaticResource MenuIcon}" Text="&#xE790;"/></MenuItem.Icon>
+                    <MenuItem x:Name="SystemThemeMenuItem" Header="_System" Tag="System" IsCheckable="True"
+                              Click="ThemeMenuItemClick">
+                        <MenuItem.Icon><TextBlock Style="{StaticResource MenuIcon}" Text="&#xE770;"/></MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem x:Name="LightThemeMenuItem" Header="_Light" Tag="Light" IsCheckable="True"
+                              Click="ThemeMenuItemClick">
+                        <MenuItem.Icon><TextBlock Style="{StaticResource MenuIcon}" Text="&#xE793;"/></MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem x:Name="DarkThemeMenuItem" Header="_Dark" Tag="Dark" IsCheckable="True"
+                              Click="ThemeMenuItemClick">
+                        <MenuItem.Icon><TextBlock Style="{StaticResource MenuIcon}" Text="&#xE708;"/></MenuItem.Icon>
+                    </MenuItem>
+                </MenuItem>
+            </MenuItem>
+            <MenuItem Header="_Options" Style="{StaticResource TopMenuItem}">
+                <MenuItem Header="Enable _deletion" IsCheckable="True" IsChecked="{Binding DeletionEnabled, Mode=TwoWay}">
+                    <MenuItem.Icon><TextBlock Style="{StaticResource MenuIcon}" Text="&#xE8D7;"/></MenuItem.Icon>
+                </MenuItem>
+            </MenuItem>
+        </Menu>
+        <Grid Margin="12">
         <Grid.ColumnDefinitions><ColumnDefinition Width="240" MinWidth="150"/><ColumnDefinition Width="8"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
         <DockPanel>
-            <Button DockPanel.Dock="Top" Content="Refresh drives" Command="{Binding RefreshFoldersCommand}" HorizontalAlignment="Left"/>
+            <TextBlock DockPanel.Dock="Top" Text="Folders" FontWeight="SemiBold" Margin="2,2,0,8"/>
             <TreeView x:Name="FolderTree" ItemsSource="{Binding FolderRoots}" SizeChanged="FolderTreeSizeChanged" VirtualizingStackPanel.IsVirtualizing="False">
                 <TreeView.ItemContainerStyle>
                     <Style TargetType="TreeViewItem">
@@ -132,7 +339,7 @@
                                 <ContextMenu Style="{StaticResource ThemedContextMenu}"
                                              DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
                                     <MenuItem Style="{StaticResource ContextMenuItem}" Header="Rescan" Command="{x:Static app:MainWindow.RescanItemCommand}" CommandParameter="{Binding}">
-                                        <MenuItem.Icon><TextBlock Style="{StaticResource ContextMenuIcon}" Text="&#xE72C;"/></MenuItem.Icon>
+                                        <MenuItem.Icon><TextBlock Style="{StaticResource MenuIcon}" Text="&#xE72C;"/></MenuItem.Icon>
                                     </MenuItem>
                                 </ContextMenu>
                             </Setter.Value>
@@ -146,28 +353,22 @@
         <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch" Background="{DynamicResource DividerBrush}"/>
         <Grid Grid.Column="2">
             <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-            <StackPanel>
-                <TextBox Text="{Binding SelectedPath, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"/>
-                <WrapPanel>
-                    <Button Content="Browse" Command="{Binding BrowseCommand}"/>
-                    <Button Content="Full scan" Command="{Binding ScanCommand}"/>
-                    <Button Content="Load cache" Command="{Binding LoadCacheCommand}"/>
-                    <Button Content="Incremental refresh" Command="{Binding IncrementalRefreshCommand}"/>
-                    <Button Content="Delete cache" Command="{Binding DeleteCacheCommand}"/>
-                    <Button Content="Cancel" Command="{Binding CancelCommand}"/>
-                    <Button Content="Export CSV" Command="{Binding ExportCommand}"/>
-                    <Button Content="Run as admin" Command="{Binding ElevateCommand}"
-                            Visibility="{Binding CanElevate, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                    <CheckBox Content="Auto refresh changes" IsChecked="{Binding AutoRefreshChanges}" Margin="6,6,12,6"/>
-                    <CheckBox Content="Enable deletion" IsChecked="{Binding DeletionEnabled}" Margin="6,6,0,6"/>
-                    <CheckBox Content="Largest files" IsChecked="{Binding LargestFiles}" Margin="6,6,12,6"/>
-                    <CheckBox Content="Smallest first" IsChecked="{Binding SmallestFirst}" Margin="6,6,12,6"
-                              Visibility="{Binding LargestFiles, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                    <TextBlock Text="Theme" VerticalAlignment="Center" Margin="6,0,6,6"/>
-                    <ComboBox x:Name="ThemeSelector" Width="92" Margin="0,0,0,6" VerticalContentAlignment="Center"
-                              SelectionChanged="ThemeSelectionChanged"/>
-                </WrapPanel>
-            </StackPanel>
+            <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBox Text="{Binding SelectedPath, UpdateSourceTrigger=PropertyChanged}"
+                         VerticalContentAlignment="Center" ToolTip="Folder or drive to scan"/>
+                <Button Grid.Column="1" Content="Browse..." Command="{Binding BrowseCommand}"
+                        Style="{StaticResource ToolbarButton}" ToolTip="Choose a folder"/>
+                <Button Grid.Column="2" Content="Scan" Command="{Binding ScanCommand}"
+                        Style="{StaticResource PrimaryToolbarButton}" ToolTip="Run a full scan"/>
+                <Button Grid.Column="3" Content="Cancel" Command="{Binding CancelCommand}"
+                        Style="{StaticResource ToolbarButton}" ToolTip="Cancel the current operation"/>
+            </Grid>
             <StackPanel Grid.Row="1" Margin="0,4,0,8">
                 <TextBlock Text="{Binding Status}" FontWeight="SemiBold" TextWrapping="Wrap"/>
                 <Border Background="{DynamicResource UsageTrackBrush}" Padding="8,5" Margin="0,4,0,0"
@@ -234,17 +435,17 @@
                                         <ContextMenu Style="{StaticResource ThemedContextMenu}"
                                                      DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
                                             <MenuItem Style="{StaticResource ContextMenuItem}" Header="Open in Explorer" Command="{x:Static app:MainWindow.OpenResultCommand}" CommandParameter="{Binding}">
-                                                <MenuItem.Icon><TextBlock Style="{StaticResource ContextMenuIcon}" Text="&#xE838;"/></MenuItem.Icon>
+                                                <MenuItem.Icon><TextBlock Style="{StaticResource MenuIcon}" Text="&#xE838;"/></MenuItem.Icon>
                                             </MenuItem>
                                             <MenuItem Style="{StaticResource ContextMenuItem}" Header="Copy path" Command="{x:Static app:MainWindow.CopyResultPathCommand}" CommandParameter="{Binding}">
-                                                <MenuItem.Icon><TextBlock Style="{StaticResource ContextMenuIcon}" Text="&#xE8C8;"/></MenuItem.Icon>
+                                                <MenuItem.Icon><TextBlock Style="{StaticResource MenuIcon}" Text="&#xE8C8;"/></MenuItem.Icon>
                                             </MenuItem>
                                             <MenuItem Style="{StaticResource ContextMenuItem}" Header="Rescan" Command="{x:Static app:MainWindow.RescanItemCommand}" CommandParameter="{Binding}">
-                                                <MenuItem.Icon><TextBlock Style="{StaticResource ContextMenuIcon}" Text="&#xE72C;"/></MenuItem.Icon>
+                                                <MenuItem.Icon><TextBlock Style="{StaticResource MenuIcon}" Text="&#xE72C;"/></MenuItem.Icon>
                                             </MenuItem>
                                             <Separator Style="{StaticResource ContextMenuSeparator}"/>
                                             <MenuItem Style="{StaticResource ContextMenuItem}" Header="Delete" Command="{x:Static app:MainWindow.DeleteResultCommand}" CommandParameter="{Binding}">
-                                                <MenuItem.Icon><TextBlock Style="{StaticResource ContextMenuIcon}" Text="&#xE74D;"/></MenuItem.Icon>
+                                                <MenuItem.Icon><TextBlock Style="{StaticResource MenuIcon}" Text="&#xE74D;"/></MenuItem.Icon>
                                             </MenuItem>
                                         </ContextMenu>
                                     </Setter.Value>
@@ -276,5 +477,6 @@
                 </StackPanel>
             </Border>
         </Border>
-    </Grid>
+        </Grid>
+    </DockPanel>
 </Window>
