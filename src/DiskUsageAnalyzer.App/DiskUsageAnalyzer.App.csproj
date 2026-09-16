@@ -11,7 +11,7 @@
     <AssemblyName>DiskUsageAnalyzer</AssemblyName>
     <Product>Disk Usage Analyzer</Product>
     <Description>A fast, read-only Windows disk usage analyzer.</Description>
-    <Version>1.0.2</Version>
+    <Version>1.0.3</Version>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>

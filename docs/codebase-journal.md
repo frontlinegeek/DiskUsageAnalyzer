@@ -31,6 +31,14 @@ Completed the approved stabilization pass. No Git metadata is present in this wo
 - Added atomic CSV destination replacement, invariant formatting, local error details, exception reporting, and preservation of an existing destination when export fails or is canceled.
 - Added a separate Windows application xUnit/Moq project, optional STA WPF smoke test, and opt-in diagnostic console project. Moq is the only new package dependency.
 
+### Theme support — 2026-09-15
+
+- Added Light, Dark, and System theme preferences through UI-owned resource dictionaries, keeping Core and Infrastructure independent of WPF.
+- System mode reads the Windows app-color preference and reapplies the palette and title-bar treatment when Windows broadcasts a settings change.
+- The selected preference is stored in a portable `settings.json` beside the executable. Missing, malformed, or read-only settings fall back safely to System without blocking startup.
+- Replaced hard-coded main-window colors with semantic brushes and added themed control, selection, warning, error, divider, and usage-bar resources.
+- Extended the opt-in WPF smoke workflow to switch themes, verify the effective brushes, and render a Dark-mode artifact. Added direct settings round-trip and malformed-file tests.
+
 ## Verification
 
 - Final Release run: 72 passed, 1 explicitly skipped (real symbolic-link creation requires an unavailable privilege). This includes real junction traversal protection and the WPF workflow.
@@ -60,12 +68,12 @@ An earlier updated sample measured 9.11 ms for the same update batch; timing var
 
 - FileSystemWatcher is eventually consistent; buffers and uncertain directory changes require reconciliation. Access errors still mean totals can be incomplete.
 - Permanent deletion remains nontransactional against concurrent external filesystem changes. The opt-in, confirmation, and path checks do not promise transactional isolation or undo.
-- Production logging still uses Trace without the planned rolling-file deployment setup. Structured file logging, settings, and portable publish verification belong to the deferred milestones below.
+- Production logging still uses Trace without the planned rolling-file deployment setup. Window/layout settings and portable publish verification belong to the deferred milestones below.
 - Very large-tree behavior is covered by deterministic deep-tree tests and the 10,000-file diagnostic; million-file production profiling is still useful before adding native scanning or persistent indexes.
 
 ## Deferred roadmap
 
 1. Structured rolling-file logging and user-facing error browsing.
 2. Portable win-x64 self-contained publish profile and deployment smoke tests.
-3. Settings persistence, including portable settings.json behavior.
+3. Persist window position, size, units, filters, and other non-theme preferences in the portable settings file.
 4. Allocated sizes, additional visualizations, and scan comparisons only after profiling and explicit feature design.

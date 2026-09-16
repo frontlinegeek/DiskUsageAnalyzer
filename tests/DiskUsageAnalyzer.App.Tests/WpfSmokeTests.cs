@@ -5,6 +5,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using DiskUsageAnalyzer.App.ViewModels;
 using DiskUsageAnalyzer.App.Services;
+using DiskUsageAnalyzer.App.Theming;
 using DiskUsageAnalyzer.Infrastructure.Scanning;
 using DiskUsageAnalyzer.Infrastructure.Export;
 using DiskUsageAnalyzer.Infrastructure.Watching;
@@ -96,6 +97,17 @@ public sealed class WpfSmokeTests
                     position = selectedFolder.TransformToAncestor(folderTree).Transform(new Point());
                     Assert.InRange(position.Y, 0, folderTree.ActualHeight - 1);
                     Render(window, Path.Combine(artifacts, "narrow.png"));
+                    var themeSelector = (System.Windows.Controls.ComboBox)window.FindName("ThemeSelector");
+                    themeSelector.SelectedItem = ThemePreference.Dark;
+                    await dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+                    Assert.Equal(ThemePreference.Dark, application.ThemeManager.Preference);
+                    Assert.True(application.ThemeManager.IsDarkTheme);
+                    Assert.Equal(Color.FromRgb(0x17, 0x1A, 0x1F),
+                        ((SolidColorBrush)application.Resources["WindowBackgroundBrush"]).Color);
+                    Assert.Equal(((SolidColorBrush)application.Resources["ComboBoxTextBrush"]).Color,
+                        ((SolidColorBrush)themeSelector.Foreground).Color);
+                    Render(window, Path.Combine(artifacts, "dark.png"));
+                    themeSelector.SelectedItem = ThemePreference.System;
                     vm.AutoRefreshChanges = false;
                     for (var index = 0; index < 80; index++)
                         await File.WriteAllBytesAsync(Path.Combine(temp.Path, $"extra-{index:D2}.bin"), new byte[10]);
@@ -121,8 +133,8 @@ public sealed class WpfSmokeTests
                     vm.LargestFiles = false;
                     await vm.FilterTask;
                     await dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
-                    Assert.Equal(verticalOffset, resultScroll.VerticalOffset);
-                    Assert.Equal(horizontalOffset, horizontalScroll.HorizontalOffset);
+                    Assert.InRange(resultScroll.VerticalOffset, verticalOffset - 0.5, verticalOffset + 0.5);
+                    Assert.InRange(horizontalScroll.HorizontalOffset, horizontalOffset - 0.5, horizontalOffset + 0.5);
                     nestedRow = vm.Results[0].Children.Single(item => item.Name == "nested");
                     Assert.True(nestedRow.IsExpanded);
                     Assert.True(nestedRow.IsSelected);

@@ -4,13 +4,14 @@
         xmlns:app="clr-namespace:DiskUsageAnalyzer.App"
         xmlns:vm="clr-namespace:DiskUsageAnalyzer.App.ViewModels"
         Title="Disk Usage Analyzer" Height="760" Width="1240" MinHeight="560" MinWidth="800"
-        Background="#F4F6F8">
+        Background="{DynamicResource WindowBackgroundBrush}"
+        Foreground="{DynamicResource TextPrimaryBrush}">
     <Window.Resources>
-        <Style TargetType="Button">
+        <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
             <Setter Property="Padding" Value="10,6"/>
             <Setter Property="Margin" Value="0,0,6,6"/>
         </Style>
-        <Style TargetType="TextBox">
+        <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
             <Setter Property="Padding" Value="6"/>
         </Style>
         <HierarchicalDataTemplate DataType="{x:Type vm:DiskItemViewModel}" ItemsSource="{Binding Children}">
@@ -27,26 +28,26 @@
                 <Grid Margin="{Binding NameMargin}">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                     <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                    <TextBlock Grid.Column="1" Text=" reparse" Foreground="#916300"
+                    <TextBlock Grid.Column="1" Text=" reparse" Foreground="{DynamicResource WarningBrush}"
                                Visibility="{Binding IsReparsePoint, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                 </Grid>
                 <TextBlock Grid.Column="2" Text="{Binding Size}" HorizontalAlignment="Right"/>
                 <Grid Grid.Column="4" Margin="12,0,0,0">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="190"/><ColumnDefinition Width="58"/></Grid.ColumnDefinitions>
-                    <Border Background="#DFE4E8" Height="8"/>
-                    <Border Background="#197E79" Height="8" Width="{Binding BarWidth}" HorizontalAlignment="Left"/>
+                    <Border Background="{DynamicResource UsageTrackBrush}" Height="8"/>
+                    <Border Background="{DynamicResource AccentBrush}" Height="8" Width="{Binding BarWidth}" HorizontalAlignment="Left"/>
                     <TextBlock Grid.Column="1" Text="{Binding PercentText}" HorizontalAlignment="Right" FontSize="11"/>
                 </Grid>
                 <TextBlock Grid.Column="6" Text="{Binding FileCount}" HorizontalAlignment="Right"/>
                 <TextBlock Grid.Column="8" Text="{Binding FolderCount}" HorizontalAlignment="Right"/>
                 <TextBlock Grid.Column="10" Text="{Binding LastModified}" HorizontalAlignment="Right"/>
-                <TextBlock Grid.Column="12" Text="{Binding ErrorCount}" HorizontalAlignment="Right" Foreground="#A33A2A"/>
+                <TextBlock Grid.Column="12" Text="{Binding ErrorCount}" HorizontalAlignment="Right" Foreground="{DynamicResource ErrorBrush}"/>
             </Grid>
         </HierarchicalDataTemplate>
         <HierarchicalDataTemplate DataType="{x:Type vm:FolderTreeItemViewModel}" ItemsSource="{Binding Children}">
             <StackPanel Margin="0,3" MaxWidth="210" ToolTip="{Binding Details}">
                 <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
-                <TextBlock Text="{Binding Details}" Foreground="#637180" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                <TextBlock Text="{Binding Details}" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11" TextTrimming="CharacterEllipsis"/>
             </StackPanel>
         </HierarchicalDataTemplate>
     </Window.Resources>
@@ -65,7 +66,7 @@
                 </TreeView.ItemContainerStyle>
             </TreeView>
         </DockPanel>
-        <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch" Background="#D6DDE5"/>
+        <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch" Background="{DynamicResource DividerBrush}"/>
         <Grid Grid.Column="2">
             <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
             <StackPanel>
@@ -82,18 +83,21 @@
                     <CheckBox Content="Largest files" IsChecked="{Binding LargestFiles}" Margin="6,6,12,6"/>
                     <CheckBox Content="Smallest first" IsChecked="{Binding SmallestFirst}" Margin="6,6,12,6"
                               Visibility="{Binding LargestFiles, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                    <TextBlock Text="Theme" VerticalAlignment="Center" Margin="6,0,6,6"/>
+                    <ComboBox x:Name="ThemeSelector" Width="92" Margin="0,0,0,6" VerticalContentAlignment="Center"
+                              SelectionChanged="ThemeSelectionChanged"/>
                 </WrapPanel>
             </StackPanel>
             <StackPanel Grid.Row="1" Margin="0,4,0,8">
                 <TextBlock Text="{Binding Status}" FontWeight="SemiBold" TextWrapping="Wrap"/>
                 <WrapPanel Margin="0,4">
-                    <TextBlock Text="{Binding AccessLevelText}" Margin="0,0,16,0" Foreground="#637180"/>
+                    <TextBlock Text="{Binding AccessLevelText}" Margin="0,0,16,0" Foreground="{DynamicResource TextSecondaryBrush}"/>
                     <TextBlock Text="{Binding FilesScannedText, StringFormat=Files: {0}}" Margin="0,0,16,0"/>
                     <TextBlock Text="{Binding FoldersScannedText, StringFormat=Folders: {0}}" Margin="0,0,16,0"/>
                     <TextBlock Text="{Binding BytesScannedText, StringFormat=Size: {0}}" Margin="0,0,16,0"/>
                     <TextBlock Text="{Binding ErrorsEncounteredText, StringFormat=Errors: {0}}"/>
                 </WrapPanel>
-                <TextBlock Text="{Binding CurrentPath}" TextTrimming="CharacterEllipsis" Foreground="#637180"/>
+                <TextBlock Text="{Binding CurrentPath}" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource TextSecondaryBrush}"/>
             </StackPanel>
             <Expander Grid.Row="2" Header="Filters" Margin="0,0,0,8">
                 <Grid Margin="0,6,0,0">
@@ -106,7 +110,7 @@
             <ScrollViewer x:Name="ResultScroller" Grid.Row="3" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" CanContentScroll="False">
                 <Grid MinWidth="1080" Grid.IsSharedSizeScope="True">
                     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-                    <Grid Background="#E7ECF1" Margin="0,0,0,2">
+                    <Grid Background="{DynamicResource RaisedSurfaceBrush}" Margin="0,0,0,2">
                         <Grid Margin="28,8,12,8" HorizontalAlignment="Left">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="260" MinWidth="60" SharedSizeGroup="ResultName"/><ColumnDefinition Width="5"/>
@@ -121,17 +125,17 @@
                             <TextBlock Grid.Column="4" Text="{Binding PercentageHeading}" Margin="12,0"/><TextBlock Grid.Column="6" Text="Files" HorizontalAlignment="Right"/>
                             <TextBlock Grid.Column="8" Text="Folders" HorizontalAlignment="Right"/><TextBlock Grid.Column="10" Text="Modified" HorizontalAlignment="Right"/>
                             <TextBlock Grid.Column="12" Text="Errors" HorizontalAlignment="Right"/>
-                            <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch" Background="#D6DDE5"
+                            <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch" Background="{DynamicResource DividerBrush}"
                                           ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" MouseDoubleClick="ResultColumnDividerDoubleClick"/>
-                            <GridSplitter Grid.Column="3" Width="5" HorizontalAlignment="Stretch" Background="#D6DDE5"
+                            <GridSplitter Grid.Column="3" Width="5" HorizontalAlignment="Stretch" Background="{DynamicResource DividerBrush}"
                                           ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" MouseDoubleClick="ResultColumnDividerDoubleClick"/>
-                            <GridSplitter Grid.Column="5" Width="5" HorizontalAlignment="Stretch" Background="#D6DDE5"
+                            <GridSplitter Grid.Column="5" Width="5" HorizontalAlignment="Stretch" Background="{DynamicResource DividerBrush}"
                                           ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" MouseDoubleClick="ResultColumnDividerDoubleClick"/>
-                            <GridSplitter Grid.Column="7" Width="5" HorizontalAlignment="Stretch" Background="#D6DDE5"
+                            <GridSplitter Grid.Column="7" Width="5" HorizontalAlignment="Stretch" Background="{DynamicResource DividerBrush}"
                                           ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" MouseDoubleClick="ResultColumnDividerDoubleClick"/>
-                            <GridSplitter Grid.Column="9" Width="5" HorizontalAlignment="Stretch" Background="#D6DDE5"
+                            <GridSplitter Grid.Column="9" Width="5" HorizontalAlignment="Stretch" Background="{DynamicResource DividerBrush}"
                                           ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" MouseDoubleClick="ResultColumnDividerDoubleClick"/>
-                            <GridSplitter Grid.Column="11" Width="5" HorizontalAlignment="Stretch" Background="#D6DDE5"
+                            <GridSplitter Grid.Column="11" Width="5" HorizontalAlignment="Stretch" Background="{DynamicResource DividerBrush}"
                                           ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" MouseDoubleClick="ResultColumnDividerDoubleClick"/>
                         </Grid>
                     </Grid>

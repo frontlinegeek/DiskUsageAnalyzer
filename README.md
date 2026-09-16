@@ -15,6 +15,8 @@ Deletion is disabled on every launch. Enabling deletion permits confirmed perman
 
 Live monitoring is optional. File changes are applied incrementally; uncertain directory changes and watcher overflow trigger reconciliation scans. Errors appear in totals and mark results incomplete. CSV exports include the complete committed scan, regardless of display filters, and contain local error details.
 
+The interface supports Light, Dark, and System themes. The selected preference is saved in `settings.json` beside the executable; System follows Windows app-color changes while the application is running.
+
 ## Development
 
 Build:

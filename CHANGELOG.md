@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.0.3 - 2026-09-15
+
+### Added
+
+- Light, Dark, and System interface themes with an in-app theme selector.
+- Live System-theme updates when the Windows app-color preference changes.
+- Portable theme preference persistence in `settings.json` beside the executable.
+- Theme-aware window chrome, controls, result bars, status text, and error indicators.
+- WPF smoke coverage for switching to Dark theme and rendering the themed interface.
+
+### Fixed
+
+- The collapsed theme selector now maintains readable text contrast in Dark mode.
+- WPF scroll-position smoke assertions now allow subpixel layout rounding.
+
 ## 1.0.2 - 2026-09-15
 
 ### Added
