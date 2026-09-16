@@ -1,0 +1,118 @@
+name: Build release installer
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Determine .NET SDK from solution
+        id: dotnet
+        shell: pwsh
+        run: |
+          $solutionPath = 'Disk Usage Analyzer.sln'
+          $solutionDirectory = Split-Path -Parent (Resolve-Path -LiteralPath $solutionPath)
+          $solution = Get-Content -Raw -LiteralPath $solutionPath
+          $projectMatches = [regex]::Matches(
+            $solution,
+            'Project\("[^"]+"\) = "[^"]+", "([^"]+\.csproj)"'
+          )
+
+          if ($projectMatches.Count -eq 0) {
+            throw "No .NET projects were found in $solutionPath."
+          }
+
+          $frameworks = foreach ($projectMatch in $projectMatches) {
+            $relativeProjectPath = $projectMatch.Groups[1].Value
+            $projectPath = Join-Path $solutionDirectory $relativeProjectPath
+            [xml] $project = Get-Content -Raw -LiteralPath $projectPath
+
+            foreach ($propertyGroup in $project.Project.PropertyGroup) {
+              if ($propertyGroup.TargetFramework) {
+                [string] $propertyGroup.TargetFramework
+              }
+
+              if ($propertyGroup.TargetFrameworks) {
+                ([string] $propertyGroup.TargetFrameworks).Split(';')
+              }
+            }
+          }
+
+          $sdkMajors = @(
+            $frameworks |
+              ForEach-Object {
+                if ($_ -match '^net(?<major>\d+)\.\d+(?:-|$)') {
+                  [int] $Matches.major
+                }
+              } |
+              Sort-Object -Unique
+          )
+
+          if ($sdkMajors.Count -ne 1) {
+            throw "Expected one .NET SDK major version in the solution, found: $($sdkMajors -join ', ')."
+          }
+
+          $sdkVersion = "$($sdkMajors[0]).0.x"
+          "sdk_version=$sdkVersion" >> $env:GITHUB_OUTPUT
+          Write-Host "Using .NET SDK $sdkVersion for target frameworks: $($frameworks -join ', ')"
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ steps.dotnet.outputs.sdk_version }}
+
+      - name: Determine application version from release tag
+        id: version
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          if ($env:RELEASE_TAG -notmatch '^v?(?<version>\d+\.\d+\.\d+(?:\.\d+)?)$') {
+            throw "Release tag '$env:RELEASE_TAG' must be a numeric version such as v1.2.3 or 1.2.3."
+          }
+
+          "version=$($Matches.version)" >> $env:GITHUB_OUTPUT
+
+      - name: Install Inno Setup 6
+        shell: pwsh
+        run: choco install innosetup --yes --no-progress
+
+      - name: Build application and installer
+        id: installer
+        shell: pwsh
+        env:
+          APP_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
+            -File '.\installer\Build-Installer.ps1' `
+            -Version $env:APP_VERSION
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Installer build failed with exit code $LASTEXITCODE."
+          }
+
+          $installerPath = Join-Path $PWD "artifacts\installer\DiskUsageAnalyzer-$env:APP_VERSION-win-x64-setup.exe"
+          if (-not (Test-Path -LiteralPath $installerPath -PathType Leaf)) {
+            throw "Expected installer was not created at '$installerPath'."
+          }
+
+          "installer_path=$installerPath" >> $env:GITHUB_OUTPUT
+
+      - name: Attach installer to GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          INSTALLER_PATH: ${{ steps.installer.outputs.installer_path }}
+        run: gh release upload $env:RELEASE_TAG $env:INSTALLER_PATH --clobber --repo $env:GITHUB_REPOSITORY
