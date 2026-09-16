@@ -108,15 +108,14 @@ public sealed class WpfSmokeTests
                     position = selectedFolder.TransformToAncestor(folderTree).Transform(new Point());
                     Assert.InRange(position.Y, 0, folderTree.ActualHeight - 1);
                     Render(window, Path.Combine(artifacts, "narrow.png"));
-                    var themeSelector = (System.Windows.Controls.ComboBox)window.FindName("ThemeSelector");
-                    themeSelector.SelectedItem = ThemePreference.Dark;
+                    var darkThemeMenuItem = (System.Windows.Controls.MenuItem)window.FindName("DarkThemeMenuItem");
+                    darkThemeMenuItem.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.MenuItem.ClickEvent));
                     await dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
                     Assert.Equal(ThemePreference.Dark, application.ThemeManager.Preference);
                     Assert.True(application.ThemeManager.IsDarkTheme);
                     Assert.Equal(Color.FromRgb(0x17, 0x1A, 0x1F),
                         ((SolidColorBrush)application.Resources["WindowBackgroundBrush"]).Color);
-                    Assert.Equal(((SolidColorBrush)application.Resources["ComboBoxTextBrush"]).Color,
-                        ((SolidColorBrush)themeSelector.Foreground).Color);
+                    Assert.True(darkThemeMenuItem.IsChecked);
                     Render(window, Path.Combine(artifacts, "dark.png"));
                     var darkResultTree = (System.Windows.Controls.TreeView)window.FindName("ResultTree");
                     var darkResultItem = Assert.IsType<System.Windows.Controls.TreeViewItem>(
@@ -141,7 +140,8 @@ public sealed class WpfSmokeTests
                     cacheLoad.SetResult(null);
                     await cacheLoading;
                     Assert.Equal(Visibility.Collapsed, cacheOverlay.Visibility);
-                    themeSelector.SelectedItem = ThemePreference.System;
+                    var systemThemeMenuItem = (System.Windows.Controls.MenuItem)window.FindName("SystemThemeMenuItem");
+                    systemThemeMenuItem.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.MenuItem.ClickEvent));
                     vm.AutoRefreshChanges = false;
                     for (var index = 0; index < 80; index++)
                         await File.WriteAllBytesAsync(Path.Combine(temp.Path, $"extra-{index:D2}.bin"), new byte[10]);

@@ -33,9 +33,8 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         _themeManager = ((App)System.Windows.Application.Current).ThemeManager;
-        ThemeSelector.ItemsSource = Enum.GetValues<ThemePreference>();
-        ThemeSelector.SelectedItem = _themeManager.Preference;
         _themeManager.Apply(_themeManager.Preference, persist: false);
+        UpdateThemeMenuChecks();
         SourceInitialized += WindowSourceInitialized;
         CommandBindings.Add(new CommandBinding(OpenResultCommand, ExecuteOpenResult, CanExecuteOpenResult));
         CommandBindings.Add(new CommandBinding(CopyResultPathCommand, ExecuteCopyResultPath, CanExecuteCopyResultPath));
@@ -58,11 +57,24 @@ public partial class MainWindow : Window
         };
     }
 
-    private void ThemeSelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void ThemeMenuItemClick(object sender, RoutedEventArgs e)
     {
-        if (ThemeSelector.SelectedItem is ThemePreference preference && preference != _themeManager.Preference)
+        if (sender is System.Windows.Controls.MenuItem { Tag: string value }
+            && Enum.TryParse<ThemePreference>(value, out var preference))
+        {
             _themeManager.Apply(preference);
+            UpdateThemeMenuChecks();
+        }
     }
+
+    private void UpdateThemeMenuChecks()
+    {
+        SystemThemeMenuItem.IsChecked = _themeManager.Preference == ThemePreference.System;
+        LightThemeMenuItem.IsChecked = _themeManager.Preference == ThemePreference.Light;
+        DarkThemeMenuItem.IsChecked = _themeManager.Preference == ThemePreference.Dark;
+    }
+
+    private void ExitMenuItemClick(object sender, RoutedEventArgs e) => Close();
 
     private void WindowSourceInitialized(object? sender, EventArgs e)
     {

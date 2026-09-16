@@ -6,6 +6,12 @@
         Title="Disk Usage Analyzer" Height="760" Width="1240" MinHeight="560" MinWidth="800"
         Background="{DynamicResource WindowBackgroundBrush}"
         Foreground="{DynamicResource TextPrimaryBrush}">
+    <Window.InputBindings>
+        <KeyBinding Key="O" Modifiers="Control" Command="{Binding BrowseCommand}"/>
+        <KeyBinding Key="E" Modifiers="Control" Command="{Binding ExportCommand}"/>
+        <KeyBinding Key="F5" Command="{Binding ScanCommand}"/>
+        <KeyBinding Key="Escape" Command="{Binding CancelCommand}"/>
+    </Window.InputBindings>
     <Window.Resources>
         <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
             <Setter Property="Padding" Value="10,6"/>
@@ -13,6 +19,16 @@
         </Style>
         <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
             <Setter Property="Padding" Value="6"/>
+        </Style>
+        <Style x:Key="ToolbarButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Margin" Value="6,0,0,0"/>
+            <Setter Property="MinWidth" Value="72"/>
+        </Style>
+        <Style x:Key="PrimaryToolbarButton" TargetType="Button" BasedOn="{StaticResource ToolbarButton}">
+            <Setter Property="Background" Value="{DynamicResource AccentBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
         </Style>
         <Style x:Key="ContextMenuIcon" TargetType="TextBlock">
             <Setter Property="FontFamily" Value="Segoe MDL2 Assets"/>
@@ -118,10 +134,52 @@
             </StackPanel>
         </HierarchicalDataTemplate>
     </Window.Resources>
-    <Grid Margin="12">
+    <DockPanel>
+        <Menu DockPanel.Dock="Top" Background="{DynamicResource SurfaceBrush}"
+              BorderBrush="{DynamicResource DividerBrush}" BorderThickness="0,0,0,1">
+            <MenuItem Header="_File">
+                <MenuItem Header="_Browse for folder..." Command="{Binding BrowseCommand}" InputGestureText="Ctrl+O"/>
+                <Separator/>
+                <MenuItem Header="_Export CSV..." Command="{Binding ExportCommand}" InputGestureText="Ctrl+E"/>
+                <Separator/>
+                <MenuItem Header="E_xit" Click="ExitMenuItemClick"/>
+            </MenuItem>
+            <MenuItem Header="_Scan">
+                <MenuItem Header="_Full scan" Command="{Binding ScanCommand}" InputGestureText="F5"/>
+                <MenuItem Header="_Incremental refresh" Command="{Binding IncrementalRefreshCommand}"/>
+                <MenuItem Header="_Cancel" Command="{Binding CancelCommand}" InputGestureText="Esc"/>
+                <Separator/>
+                <MenuItem Header="_Load cached scan" Command="{Binding LoadCacheCommand}"/>
+                <MenuItem Header="_Delete cached scan" Command="{Binding DeleteCacheCommand}"/>
+                <Separator/>
+                <MenuItem Header="Refresh _drives" Command="{Binding RefreshFoldersCommand}"/>
+                <MenuItem Header="Run as _administrator" Command="{Binding ElevateCommand}"
+                          Visibility="{Binding CanElevate, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+            </MenuItem>
+            <MenuItem Header="_View">
+                <MenuItem Header="_Largest files" IsCheckable="True" IsChecked="{Binding LargestFiles, Mode=TwoWay}"/>
+                <MenuItem Header="_Smallest first" IsCheckable="True" IsChecked="{Binding SmallestFirst, Mode=TwoWay}"
+                          IsEnabled="{Binding LargestFiles}"/>
+                <Separator/>
+                <MenuItem Header="_Auto refresh changes" IsCheckable="True" IsChecked="{Binding AutoRefreshChanges, Mode=TwoWay}"/>
+                <Separator/>
+                <MenuItem Header="_Theme">
+                    <MenuItem x:Name="SystemThemeMenuItem" Header="_System" Tag="System" IsCheckable="True"
+                              Click="ThemeMenuItemClick"/>
+                    <MenuItem x:Name="LightThemeMenuItem" Header="_Light" Tag="Light" IsCheckable="True"
+                              Click="ThemeMenuItemClick"/>
+                    <MenuItem x:Name="DarkThemeMenuItem" Header="_Dark" Tag="Dark" IsCheckable="True"
+                              Click="ThemeMenuItemClick"/>
+                </MenuItem>
+            </MenuItem>
+            <MenuItem Header="_Options">
+                <MenuItem Header="Enable _deletion" IsCheckable="True" IsChecked="{Binding DeletionEnabled, Mode=TwoWay}"/>
+            </MenuItem>
+        </Menu>
+        <Grid Margin="12">
         <Grid.ColumnDefinitions><ColumnDefinition Width="240" MinWidth="150"/><ColumnDefinition Width="8"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
         <DockPanel>
-            <Button DockPanel.Dock="Top" Content="Refresh drives" Command="{Binding RefreshFoldersCommand}" HorizontalAlignment="Left"/>
+            <TextBlock DockPanel.Dock="Top" Text="Folders" FontWeight="SemiBold" Margin="2,2,0,8"/>
             <TreeView x:Name="FolderTree" ItemsSource="{Binding FolderRoots}" SizeChanged="FolderTreeSizeChanged" VirtualizingStackPanel.IsVirtualizing="False">
                 <TreeView.ItemContainerStyle>
                     <Style TargetType="TreeViewItem">
@@ -146,28 +204,22 @@
         <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch" Background="{DynamicResource DividerBrush}"/>
         <Grid Grid.Column="2">
             <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-            <StackPanel>
-                <TextBox Text="{Binding SelectedPath, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"/>
-                <WrapPanel>
-                    <Button Content="Browse" Command="{Binding BrowseCommand}"/>
-                    <Button Content="Full scan" Command="{Binding ScanCommand}"/>
-                    <Button Content="Load cache" Command="{Binding LoadCacheCommand}"/>
-                    <Button Content="Incremental refresh" Command="{Binding IncrementalRefreshCommand}"/>
-                    <Button Content="Delete cache" Command="{Binding DeleteCacheCommand}"/>
-                    <Button Content="Cancel" Command="{Binding CancelCommand}"/>
-                    <Button Content="Export CSV" Command="{Binding ExportCommand}"/>
-                    <Button Content="Run as admin" Command="{Binding ElevateCommand}"
-                            Visibility="{Binding CanElevate, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                    <CheckBox Content="Auto refresh changes" IsChecked="{Binding AutoRefreshChanges}" Margin="6,6,12,6"/>
-                    <CheckBox Content="Enable deletion" IsChecked="{Binding DeletionEnabled}" Margin="6,6,0,6"/>
-                    <CheckBox Content="Largest files" IsChecked="{Binding LargestFiles}" Margin="6,6,12,6"/>
-                    <CheckBox Content="Smallest first" IsChecked="{Binding SmallestFirst}" Margin="6,6,12,6"
-                              Visibility="{Binding LargestFiles, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                    <TextBlock Text="Theme" VerticalAlignment="Center" Margin="6,0,6,6"/>
-                    <ComboBox x:Name="ThemeSelector" Width="92" Margin="0,0,0,6" VerticalContentAlignment="Center"
-                              SelectionChanged="ThemeSelectionChanged"/>
-                </WrapPanel>
-            </StackPanel>
+            <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBox Text="{Binding SelectedPath, UpdateSourceTrigger=PropertyChanged}"
+                         VerticalContentAlignment="Center" ToolTip="Folder or drive to scan"/>
+                <Button Grid.Column="1" Content="Browse..." Command="{Binding BrowseCommand}"
+                        Style="{StaticResource ToolbarButton}" ToolTip="Choose a folder"/>
+                <Button Grid.Column="2" Content="Scan" Command="{Binding ScanCommand}"
+                        Style="{StaticResource PrimaryToolbarButton}" ToolTip="Run a full scan"/>
+                <Button Grid.Column="3" Content="Cancel" Command="{Binding CancelCommand}"
+                        Style="{StaticResource ToolbarButton}" ToolTip="Cancel the current operation"/>
+            </Grid>
             <StackPanel Grid.Row="1" Margin="0,4,0,8">
                 <TextBlock Text="{Binding Status}" FontWeight="SemiBold" TextWrapping="Wrap"/>
                 <Border Background="{DynamicResource UsageTrackBrush}" Padding="8,5" Margin="0,4,0,0"
@@ -276,5 +328,6 @@
                 </StackPanel>
             </Border>
         </Border>
-    </Grid>
+        </Grid>
+    </DockPanel>
 </Window>
