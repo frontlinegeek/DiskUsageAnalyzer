@@ -1,54 +1,55 @@
-name: Build release installer
+name: Build and publish release
 
 on:
-  release:
-    types: [published]
+  push:
+    branches:
+      - master
+  workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: release-installer
+  cancel-in-progress: false
 
 jobs:
   build-installer:
     runs-on: windows-latest
 
     steps:
-      - name: Check out release tag
-        uses: actions/checkout@v4
+      - name: Check out selected revision
+        uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 0
 
-      - name: Determine .NET SDK from solution
-        id: dotnet
+      - name: Determine application and SDK versions
+        id: version
         shell: pwsh
         run: |
-          $solutionPath = 'Disk Usage Analyzer.sln'
-          $solutionDirectory = Split-Path -Parent (Resolve-Path -LiteralPath $solutionPath)
-          $solution = Get-Content -Raw -LiteralPath $solutionPath
-          $projectMatches = [regex]::Matches(
-            $solution,
-            'Project\("[^"]+"\) = "[^"]+", "([^"]+\.csproj)"'
+          $projectPath = 'src\DiskUsageAnalyzer.App\DiskUsageAnalyzer.App.csproj'
+          [xml] $project = Get-Content -Raw -LiteralPath $projectPath
+
+          $versionNodes = @($project.SelectNodes('/Project/PropertyGroup/Version'))
+          if ($versionNodes.Count -ne 1) {
+            throw "Expected exactly one Version in '$projectPath', found $($versionNodes.Count)."
+          }
+
+          $version = $versionNodes[0].InnerText.Trim()
+          if ($version -notmatch '^\d+\.\d+\.\d+(?:\.\d+)?$') {
+            throw "Application Version '$version' in '$projectPath' must be a numeric version such as 1.2.3 or 1.2.3.4."
+          }
+
+          $frameworkNodes = @(
+            $project.SelectNodes('/Project/PropertyGroup/TargetFramework')
+            $project.SelectNodes('/Project/PropertyGroup/TargetFrameworks')
           )
-
-          if ($projectMatches.Count -eq 0) {
-            throw "No .NET projects were found in $solutionPath."
-          }
-
-          $frameworks = foreach ($projectMatch in $projectMatches) {
-            $relativeProjectPath = $projectMatch.Groups[1].Value
-            $projectPath = Join-Path $solutionDirectory $relativeProjectPath
-            [xml] $project = Get-Content -Raw -LiteralPath $projectPath
-
-            foreach ($propertyGroup in $project.Project.PropertyGroup) {
-              if ($propertyGroup.TargetFramework) {
-                [string] $propertyGroup.TargetFramework
-              }
-
-              if ($propertyGroup.TargetFrameworks) {
-                ([string] $propertyGroup.TargetFrameworks).Split(';')
-              }
-            }
-          }
-
+          $frameworks = @(
+            $frameworkNodes |
+              ForEach-Object { $_.InnerText.Split(';') } |
+              ForEach-Object { $_.Trim() } |
+              Where-Object { $_ }
+          )
           $sdkMajors = @(
             $frameworks |
               ForEach-Object {
@@ -60,29 +61,50 @@ jobs:
           )
 
           if ($sdkMajors.Count -ne 1) {
-            throw "Expected one .NET SDK major version in the solution, found: $($sdkMajors -join ', ')."
+            throw "Expected one .NET SDK major version in '$projectPath', found: $($sdkMajors -join ', ')."
           }
 
-          $sdkVersion = "$($sdkMajors[0]).0.x"
-          "sdk_version=$sdkVersion" >> $env:GITHUB_OUTPUT
-          Write-Host "Using .NET SDK $sdkVersion for target frameworks: $($frameworks -join ', ')"
+          $tag = "v$version"
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "sdk_version=$($sdkMajors[0]).0.x" >> $env:GITHUB_OUTPUT
+          Write-Host "Application version: $version"
+          Write-Host "Release tag: $tag"
 
-      - name: Set up .NET SDK
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: ${{ steps.dotnet.outputs.sdk_version }}
-
-      - name: Determine application version from release tag
-        id: version
+      - name: Fail if tag or release already exists
         shell: pwsh
         env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
         run: |
-          if ($env:RELEASE_TAG -notmatch '^v?(?<version>\d+\.\d+\.\d+(?:\.\d+)?)$') {
-            throw "Release tag '$env:RELEASE_TAG' must be a numeric version such as v1.2.3 or 1.2.3."
+          git ls-remote --exit-code --tags origin "refs/tags/$env:RELEASE_TAG" | Out-Null
+          $tagLookupExitCode = $LASTEXITCODE
+
+          if ($tagLookupExitCode -eq 0) {
+            throw "Git tag '$env:RELEASE_TAG' already exists. Increment the application Version before publishing another release."
           }
 
-          "version=$($Matches.version)" >> $env:GITHUB_OUTPUT
+          if ($tagLookupExitCode -ne 2) {
+            throw "Unable to check whether Git tag '$env:RELEASE_TAG' exists (git exit code $tagLookupExitCode)."
+          }
+
+          $releaseLookup = gh api `
+            -H 'Accept: application/vnd.github+json' `
+            "repos/$env:GITHUB_REPOSITORY/releases/tags/$env:RELEASE_TAG" 2>&1
+          $releaseLookupExitCode = $LASTEXITCODE
+
+          if ($releaseLookupExitCode -eq 0) {
+            throw "GitHub Release '$env:RELEASE_TAG' already exists. Increment the application Version before publishing another release."
+          }
+
+          if (($releaseLookup | Out-String) -notmatch 'HTTP 404') {
+            throw "Unable to check whether GitHub Release '$env:RELEASE_TAG' exists: $($releaseLookup | Out-String)"
+          }
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ steps.version.outputs.sdk_version }}
 
       - name: Install Inno Setup 6
         shell: pwsh
@@ -109,10 +131,31 @@ jobs:
 
           "installer_path=$installerPath" >> $env:GITHUB_OUTPUT
 
-      - name: Attach installer to GitHub Release
+      - name: Create and push Git tag
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          git tag $env:RELEASE_TAG $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to create Git tag '$env:RELEASE_TAG'."
+          }
+
+          git push origin "refs/tags/$env:RELEASE_TAG"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to push Git tag '$env:RELEASE_TAG'. The tag may have been created concurrently."
+          }
+
+      - name: Create GitHub Release and attach installer
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          APP_VERSION: ${{ steps.version.outputs.version }}
           INSTALLER_PATH: ${{ steps.installer.outputs.installer_path }}
-        run: gh release upload $env:RELEASE_TAG $env:INSTALLER_PATH --clobber --repo $env:GITHUB_REPOSITORY
+        run: |
+          gh release create $env:RELEASE_TAG $env:INSTALLER_PATH `
+            --repo $env:GITHUB_REPOSITORY `
+            --verify-tag `
+            --title "Disk Usage Analyzer $env:APP_VERSION" `
+            --generate-notes
