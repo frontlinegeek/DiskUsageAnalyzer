@@ -101,6 +101,8 @@ jobs:
             throw "Unable to check whether GitHub Release '$env:RELEASE_TAG' exists: $($releaseLookup | Out-String)"
           }
 
+          exit 0
+
       - name: Set up .NET SDK
         uses: actions/setup-dotnet@v5
         with:
